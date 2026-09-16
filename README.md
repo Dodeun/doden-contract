@@ -36,6 +36,9 @@ git clone --depth 1 -b v1 https://github.com/Dodeun/doden-contract ~/.doden-cont
 python3 ~/.doden-contract/check.py .
 ```
 
+On Windows the interpreter is usually `python` rather than `python3`; CI and
+the workflow use `python3`, which is what Linux and macOS have.
+
 `--json` emits the verdict as JSON. Exit status is **0** when the tree
 conforms, **1** when it does not, and **2** when the checker could not run at
 all — a missing `docker compose`, a schema keyword the validator does not
