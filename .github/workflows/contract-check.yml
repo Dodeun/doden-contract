@@ -1,0 +1,69 @@
+name: Platform Contract (tier 1)
+
+# The published entry point. A Project calls it:
+#
+#   jobs:
+#     contract:
+#       uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v1
+#
+# This repository is public so that call needs no access grant. A private
+# reusable workflow would need the reusable-workflow access setting turned on
+# in every Project, and a private image would need a registry credential -
+# one more repository setting per Project, for a checker that holds no
+# secret. Publishing it removes both.
+#
+# It is not a Template. Nothing is ever copied out of here except CONTRACT.md;
+# Projects call this workflow rather than carrying a copy of the checker,
+# because a check copied into a Project is deletable by the hand it is
+# guarding.
+on:
+  workflow_call:
+    inputs:
+      contract-ref:
+        description: >-
+          Which doden-contract to run. Defaults to the version this workflow
+          file belongs to, which is the whole point of pinning the call at
+          @v1 - override it only to try an unreleased checker against a real
+          Project.
+        type: string
+        required: false
+        default: v1
+
+# Reads the repository and nothing else. This is the property that makes
+# publishing the checker safe and makes calling it safe at the same time: a
+# workflow that asks for no secret cannot leak one, so a Project can call
+# code it does not own without that code being able to act on its behalf.
+# Tier 2 - the repository's own settings - needs a token, which is exactly
+# why it runs somewhere else.
+permissions:
+  contents: read
+
+jobs:
+  tier-1:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Two checkouts, side by side, so the checker is never inside the tree
+      # it is judging. A contract/ directory sitting in the Project would be
+      # a file the rules then have to be taught to ignore.
+      - name: Check out the Project
+        uses: actions/checkout@v7
+        with:
+          path: project
+
+      - name: Check out the contract
+        uses: actions/checkout@v7
+        with:
+          repository: Dodeun/doden-contract
+          ref: ${{ inputs.contract-ref }}
+          path: contract
+
+      # The same command a human runs, against the same file - not a
+      # re-implementation of it in YAML. There is one checker, and this is a
+      # way of invoking it.
+      #
+      # `docker compose` renders the Stack and ubuntu-latest already has it,
+      # as it has python3. Nothing is installed here, so there is nothing to
+      # pin and nothing to go stale.
+      - name: Check
+        run: python3 contract/check.py project

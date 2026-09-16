@@ -1,0 +1,51 @@
+name: Tests
+
+# This repository's own CI. Two things it proves, and they are different:
+#
+#   - every rule fires on a tree that violates it, and stays quiet on one
+#     that does not. A rule with no failing example is a rule that has never
+#     run, so the fixtures are the whole suite.
+#   - the checker still runs on a machine that is not the one it was written
+#     on. The lesson phase 1 learned three times over is that "it works"
+#     is a claim about one laptop until somewhere else has run it.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # No setup-python step: the checker runs on whatever python3 the
+      # machine has, standard library only, and pinning a version here would
+      # be testing a python nobody runs it with.
+      - name: Which python and which compose
+        run: |
+          python3 --version
+          docker compose version
+
+      - name: The fixtures
+        run: python3 -m unittest discover -s tests -v
+
+      # The fixtures are trees built for this purpose, so they can agree with
+      # the checker by accident. This runs it against a real repository - this
+      # one - which is not a Project and must therefore be refused, naming
+      # the Manifest it does not have.
+      - name: Refuse a tree that is not a Project
+        run: |
+          if python3 check.py . ; then
+            echo "doden-contract is not a Project and the checker passed it"
+            exit 1
+          fi

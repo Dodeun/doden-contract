@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Dodeun/doden-contract/v1/platform.schema.json",
+  "slug": "fixture-base",
+  "appName": "Fixture Base",
+  "appHost": "fixture-base.example.test",
+  "profile": "node-web",
+  "addons": ["database"],
+  "contractVersion": "v1",
+  "seedCommand": "npm run seed --workspace=backend"
+}

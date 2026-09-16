@@ -1,0 +1,4 @@
+# The checker runs on Linux in CI and on whatever the operator has locally.
+# One line ending everywhere, so a checkout on Windows cannot change what the
+# checker reads or the sha256 of a CONTRACT.md copied out of here.
+* text=auto eol=lf

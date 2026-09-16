@@ -1,0 +1,59 @@
+# A conforming production Stack, with the database Add-on declared.
+#
+# This is the fixture every failing example is an overlay on, so it is
+# deliberately the smallest Stack that still has something for every tier-1
+# rule to judge: two services, both routed, one of them on `data`.
+name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
+
+services:
+  backend:
+    image: ${IMAGE_REPO_PREFIX}-backend:${IMAGE_TAG:?IMAGE_TAG is not set}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_BASE_URL: https://${APP_HOST}/api
+      DATABASE_URL:
+    networks:
+      - web
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:4000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${PROJECT_SLUG:?}-api.rule=Host(`${APP_HOST}`) && PathPrefix(`/api`)
+      - traefik.http.routers.${PROJECT_SLUG:?}-api.entrypoints=websecure
+      - traefik.http.routers.${PROJECT_SLUG:?}-api.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      - traefik.http.routers.${PROJECT_SLUG:?}-api.middlewares=${PROJECT_SLUG:?}-api-strip
+      - traefik.http.middlewares.${PROJECT_SLUG:?}-api-strip.stripprefix.prefixes=/api
+      - traefik.http.services.${PROJECT_SLUG:?}-api.loadbalancer.server.port=4000
+
+  frontend:
+    image: ${IMAGE_REPO_PREFIX}-frontend:${IMAGE_TAG:?IMAGE_TAG is not set}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - web
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      - traefik.http.routers.${PROJECT_SLUG:?}.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.${PROJECT_SLUG:?}.entrypoints=websecure
+      - traefik.http.routers.${PROJECT_SLUG:?}.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      - traefik.http.services.${PROJECT_SLUG:?}.loadbalancer.server.port=80
+
+networks:
+  web:
+    external: true
+  data:
+    external: true

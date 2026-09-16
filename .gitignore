@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+
+# fixtures/fail/committed-env/.env is a fixture, not a mistake: it is the
+# failing example for the rule that forbids a committed .env (ADR-0007).
+# Without this negation the rule would have no demonstration.
+.env
+!fixtures/**/.env
