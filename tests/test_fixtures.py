@@ -205,12 +205,22 @@ class TheStacksShape(FixtureCase):
     def test_the_latest_tag_is_refused(self):
         self.assertFails("fail/image-tag-latest", "image-tag", names="latest")
 
+    def test_a_floating_tag_that_is_not_latest_is_refused(self):
+        # This contract's own release process moves `v1` every release, so a
+        # denylist of obvious names would have let this through.
+        self.assertFails("fail/image-tag-floating", "image-tag", names=":v1")
+
     def test_an_image_with_no_tag_is_refused(self):
         self.assertFails("fail/image-tag-absent", "image-tag", names="frontend")
 
     def test_a_service_with_no_healthcheck_is_refused(self):
         self.assertFails(
             "fail/healthcheck-missing", "healthchecks", names="frontend",
+        )
+
+    def test_a_healthcheck_that_is_switched_off_is_refused(self):
+        self.assertFails(
+            "fail/healthcheck-disabled", "healthchecks", names="disables",
         )
 
 
@@ -246,6 +256,11 @@ class RoutingAndNetworks(FixtureCase):
             "fail/network-data-undeclared", "networks", names="database",
         )
 
+    def test_declaring_the_database_addon_without_joining_data_is_refused(self):
+        self.assertFails(
+            "fail/network-data-missing", "networks", names="data network",
+        )
+
 
 class ConfigurationAndImages(FixtureCase):
     def test_a_default_on_a_platform_supplied_variable_is_refused(self):
@@ -274,3 +289,59 @@ class ConfigurationAndImages(FixtureCase):
             "fail/single-stage-dockerfile", "multi-stage-dockerfiles",
             names="backend/Dockerfile",
         )
+
+
+class ReportedNotEnforced(FixtureCase):
+    """A note must never be able to change a verdict.
+
+    This is what carries two separate promises: image size is "reported, not
+    enforced", and CI and a laptop reach the same verdict on the same tree
+    even though they can see different things.
+    """
+
+    def test_a_conforming_project_still_reports_its_images(self):
+        result = self.verdict(None)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["notes"], "the images a deploy pulls go unreported")
+        self.assertTrue(
+            any("pulls" in note for note in result["notes"]),
+            result["notes"],
+        )
+
+    def test_notes_are_not_violations(self):
+        result = self.verdict("fail/published-ports")
+        rules = {entry["rule"] for entry in result["rules"]}
+        for note in result["notes"]:
+            self.assertNotIn(note, [v["message"] for v in result["violations"]])
+        self.assertNotIn("image-size", rules, "a report must not be a rule")
+
+
+class TheCheckerFailingIsNotTheProjectFailing(unittest.TestCase):
+    """Exit 2 means "could not run", and must never read as exit 1.
+
+    A checker that reports its own breakage as a contract violation sends
+    somebody to edit a Compose file to fix a missing dependency.
+    """
+
+    def test_a_schema_keyword_the_validator_does_not_implement_exits_2(self):
+        tree = merge(None)
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+
+        checker = Path(tempfile.mkdtemp(prefix="doden-checker-"))
+        self.addCleanup(shutil.rmtree, checker, ignore_errors=True)
+        for name in ("check.py", "VERSION", "CONTRACT.md", "platform.schema.json"):
+            shutil.copy(ROOT / name, checker / name)
+        shutil.copytree(ROOT / "contract", checker / "contract")
+
+        schema = json.loads((checker / "platform.schema.json").read_text())
+        schema["properties"]["slug"]["multipleOf"] = 2
+        (checker / "platform.schema.json").write_text(json.dumps(schema))
+
+        proc = subprocess.run(
+            [sys.executable, str(checker / "check.py"), str(tree)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
+        self.assertIn("multipleOf", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)

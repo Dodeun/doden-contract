@@ -125,11 +125,17 @@ carries no clone, no `.git` and no deploy key, and it compiles nothing.
 
 ### `image-tag` — every image is named by an explicit, immutable tag
 
-No `latest`, no floating tag (`main`, `stable`, `edge`, …), no missing tag.
-A Rollback is re-pointing the Stack at a previous Release's published images;
-a tag that can be moved names different bytes tomorrow, so a Release pinned
-to one is not pinned to anything. A digest is fine — it is as immutable as it
-gets.
+Every image's tag comes from `IMAGE_TAG` — the commit the images were
+published under — or the image is pinned by digest. No literal tag, and no
+missing tag.
+
+A Rollback is re-pointing the Stack at a previous Release's published images,
+so a tag that can be moved names different bytes tomorrow and a Release
+pinned to one is not pinned to anything. Checked by asking where the tag came
+from rather than what it says, because a denylist of floating names —
+`latest`, `main`, `stable` — is the obvious implementation and the wrong one:
+`v1` is on no such list, and this contract's own release process moves `v1`
+every release.
 
 ### `identity-variables` — what the platform supplies fails rather than guesses
 
@@ -209,14 +215,19 @@ every deploy.
 
 ## Reported, never enforced
 
-**Image size.** The checker names the images a Stack would pull, weighs them
-when it can, and fails on nothing. The reason is that the number in
-circulation is not the number that matters: the argument for small images
-comes from a 200 MB illustration against a 1 GB/month transfer quota, the
-first Project's backend is 582 MB on disk, and the quota counts *compressed
-layers over the wire*, which nobody has measured. A ceiling set from an
-illustration would reject Projects for the wrong reason. When that number is
-measured, this becomes a rule and the contract's version changes.
+**Image size.** The checker names the images a Stack would pull, and fails on
+nothing. The number in circulation is not the number that matters: the
+argument for small images comes from a 200 MB illustration against a
+1 GB/month transfer quota, the first Project's backend image is 582 MB on
+disk, and the quota counts *compressed layers over the wire* — which nobody
+has measured. A ceiling set from an illustration would reject Projects for
+the wrong reason.
+
+It does not weigh them either, which is the honest half. A repository
+contains no images, so there is nothing here to put on a scale, and the bytes
+a laptop happens to have are neither the number the open question needs nor a
+number CI could agree with. When a pull has actually been measured, this
+becomes a rule and the contract's version changes.
 
 ## Versions
 

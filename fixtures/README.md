@@ -37,3 +37,6 @@ Some fixtures exist to demonstrate something beyond their own rule:
 | `fail/env-file` | The render *erases* `env_file`, folding it into `environment`. The one rule that has to read the source. |
 | `pass/ignored-env` | A developer's own `.env`, ignored. Correct, and must never fail anybody's check. |
 | `pass/no-database` | The database Add-on off, and the `data` network gone with it. The contract has to pass both ways. |
+| `fail/image-tag-floating` | A tag that is not `latest` and still floats. A denylist of obvious names lets `v1` through - and this contract's own release process moves `v1`. |
+| `fail/healthcheck-disabled` | `disable: true` reads as configuration rather than as removal, which is what makes it the realistic evasion. |
+| `fail/network-data-missing` | The Add-on declared and the network absent. The `networks` rule reads both ways, so it needs a fixture in both. |

@@ -36,8 +36,12 @@ git clone --depth 1 -b v1 https://github.com/Dodeun/doden-contract ~/.doden-cont
 python3 ~/.doden-contract/check.py .
 ```
 
-`--json` emits the verdict as JSON. Exit status is 0 when the tree conforms,
-1 when it does not, 2 when the checker could not run at all.
+`--json` emits the verdict as JSON. Exit status is **0** when the tree
+conforms, **1** when it does not, and **2** when the checker could not run at
+all — a missing `docker compose`, a schema keyword the validator does not
+implement. Exit 2 is deliberately not exit 1: neither of those is a statement
+about the Project, and conflating them sends somebody to edit a Compose file
+to fix their laptop.
 
 ## What is in here
 
@@ -97,10 +101,17 @@ Versions are pinned by a **moving major tag**. A Project pins `@v1` and picks
 up fixes without doing anything.
 
 1. Update `VERSION`.
-2. If a rule changed, say so in `CONTRACT.md` — that copy is what every
+2. Set `ref:` in `.github/workflows/contract-check.yml` to the same exact
+   version. This is the step that is easy to forget and expensive to get
+   wrong: the workflow pins the checker it runs, so a Project calling
+   `@v1.0.1` must get the `v1.0.1` checker and not whatever `v1` points at
+   today. A Project running rules its own `CONTRACT.md` does not describe is
+   the disagreement the `contract-version` rule exists to catch, arriving
+   from the one direction that rule cannot see.
+3. If a rule changed, say so in `CONTRACT.md` — that copy is what every
    Project reads, and a rule the prose does not mention is a rule that will
    surprise somebody.
-3. Tag the exact version, then move the major:
+4. Commit, tag the exact version, then move the major onto the same commit:
 
 ```sh
 git tag v1.0.1
@@ -108,6 +119,9 @@ git tag -f v1
 git push origin v1.0.1
 git push -f origin v1
 ```
+
+Because the major tag lands on the commit whose workflow names the matching
+exact version, `@v1` and `@v1.0.1` run the same bytes.
 
 A change that would newly refuse a Project which passes today is a **major**
 bump. Projects move to a new major deliberately, one at a time, by changing

@@ -24,12 +24,12 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 
+from contract import CheckerError  # noqa: E402
 from contract.project import Project  # noqa: E402
 from contract.rules import REPORTS, RULES  # noqa: E402
-
-HERE = Path(__file__).resolve().parent
 
 
 def version() -> str:
@@ -134,7 +134,19 @@ def main(argv=None) -> int:
         print(f"no such directory: {tree}", file=sys.stderr)
         return 2
 
-    result = run(tree)
+    # Exit 2 is reserved for the checker being unable to run - a missing
+    # docker compose, a schema keyword the validator does not implement.
+    # None of those is a statement about the Project, and returning 1 would
+    # have somebody editing a Compose file to fix their laptop.
+    try:
+        result = run(tree)
+    except CheckerError as exc:
+        print("the contract check could not run: " + str(exc), file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print("the contract check could not run: " + str(exc), file=sys.stderr)
+        return 2
+
     print(json.dumps(result, indent=2) if args.json else report(result))
     return 0 if result["ok"] else 1
 

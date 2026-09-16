@@ -13,18 +13,11 @@ from dataclasses import dataclass
 
 from . import compose
 
-# A tag that can be moved names a different image tomorrow, so a Rollback to
-# it is not a rollback to anything in particular (ADR-0008).
 # Unset, these two produce a Stack that is silently somebody else's: an empty
-# Compose project name and Traefik routers called "-api", or an image
-# reference with no tag. The other two fail visibly, so a default is banned
-# on all four and the error form is required on these.
+# Compose project name with Traefik routers called "-api", or an image
+# reference with no tag. The other two identity variables fail visibly, so a
+# default is banned on all four and the error form is required on these.
 REQUIRE_ERROR_FORM = ("PROJECT_SLUG", "IMAGE_TAG")
-
-FLOATING_TAGS = {
-    "latest", "main", "master", "head", "edge", "stable", "nightly",
-    "dev", "develop", "staging", "prod", "production", "release",
-}
 
 
 @dataclass(frozen=True)
@@ -176,41 +169,49 @@ def no_build(project):
             )
 
 
-@rule("image-tag", "every image is named by an explicit, immutable tag", needs_render=True)
+@rule("image-tag", "every image is named by an explicit, immutable tag",
+      needs_render=True)
 def image_tag(project):
     """A Release has to name the same bytes tomorrow that it names today.
 
     Rollback is re-pointing the Stack at a previous Release's published
-    images. A floating tag makes that a re-pull of whatever moved onto the
-    tag since, which is not a rollback to anything in particular.
+    images, so a tag that can be moved names different bytes tomorrow and a
+    Release pinned to one is not pinned to anything.
+
+    Checked by asking where the tag came from rather than what it says. A
+    denylist of floating names - latest, main, stable - is the obvious
+    implementation and the wrong one: `v1` is on no such list, and this
+    contract's own release process moves `v1` every release.
     """
+    sentinel = compose.SENTINEL["IMAGE_TAG"]
     for name, definition in project.services:
         reference = definition.get("image")
         if not reference:
-            yield Violation(
-                "image-tag",
-                "service " + name + " names no image.",
-            )
+            yield Violation("image-tag", "service " + name + " names no image.")
             continue
-        if "@" in reference.rsplit("/", 1)[-1]:
-            continue  # pinned by digest, which is as immutable as it gets
+
         last = reference.rsplit("/", 1)[-1]
+        if "@" in last:
+            continue  # pinned by digest, which is as immutable as it gets
+
         if ":" not in last:
             yield Violation(
                 "image-tag",
-                "service " + name + " names " + reference + " with no tag, "
-                "which means :latest. Name the tag explicitly - the platform "
-                "supplies IMAGE_TAG, the commit the images were published "
-                "under.",
+                "service " + name + " names " + _as_written(reference) + " "
+                "with no tag, which means :latest. Take the tag from "
+                "IMAGE_TAG, the commit the images were published under.",
             )
             continue
-        tag = last.rsplit(":", 1)[1]
-        if tag in FLOATING_TAGS:
+
+        if last.rsplit(":", 1)[1] != sentinel:
             yield Violation(
                 "image-tag",
-                "service " + name + " names the floating tag :" + tag + ". A "
-                "tag that can be moved names different bytes tomorrow, so a "
-                "Release pinned to it is not pinned to anything.",
+                "service " + name + " names the literal tag :"
+                + last.rsplit(":", 1)[1] + ". Production images are addressed "
+                "by the commit they were published from, which the platform "
+                "supplies as IMAGE_TAG - so the Release deployed last month "
+                "still names the bytes it named then. A digest is the other "
+                "form that holds still.",
             )
 
 
@@ -286,6 +287,18 @@ def traefik_names(project):
                 "Project that copies this file, and two routers of one name "
                 "is one Project answering for another.",
             )
+
+
+def _as_written(reference):
+    """A rendered image reference, with the sentinels put back as variables.
+
+    The rendered file names the platform's sentinels, which would send
+    somebody looking for a registry that does not exist. What they wrote is
+    what the message should quote back at them.
+    """
+    for name, value in compose.SENTINEL.items():
+        reference = reference.replace(value, "${" + name + "}")
+    return reference
 
 
 def _traefik_component(key):
@@ -451,6 +464,15 @@ def no_committed_env(project):
         )
 
 
+def _is_dockerfile(name):
+    base = name.rsplit("/", 1)[-1]
+    return (
+        base == "Dockerfile"
+        or base.startswith("Dockerfile.")
+        or base.endswith(".Dockerfile")
+    )
+
+
 @rule("multi-stage-dockerfiles", "every Dockerfile is multi-stage")
 def multi_stage_dockerfiles(project):
     """Size is a contract requirement rather than an optimisation (ADR-0004).
@@ -460,10 +482,8 @@ def multi_stage_dockerfiles(project):
     dependencies, caches - to production and over that quota on every deploy.
     """
     for name in project.files:
-        base = name.rsplit("/", 1)[-1]
-        if base != "Dockerfile" and not base.startswith("Dockerfile."):
-            if not base.endswith(".Dockerfile"):
-                continue
+        if not _is_dockerfile(name):
+            continue
         path = project.tree / name
         if not path.is_file():
             continue
@@ -496,66 +516,26 @@ def report(fn):
 
 @report
 def image_size(project):
-    """What a pull costs, when anything here can answer that.
+    """Which images a deploy pulls. Not how big they are, and here is why.
 
-    ADR-0004 argues for small images from a 200 MB illustration against
-    GHCR's 1 GB/month transfer quota, and the tracker's backend is 582 MB on
-    disk. Those are not the same measurement - the quota counts compressed
-    layers over the wire, and nobody has measured that number - so this
-    enforces nothing. A ceiling set from an illustration would reject
-    Projects for the wrong reason. Ticket 16 measures it.
+    ADR-0004 argues for small images from a 200 MB illustration against a
+    1 GB/month transfer quota, and the first Project's backend is 582 MB on
+    disk. Those are not the same measurement: the quota counts compressed
+    layers over the wire, and nobody has measured that. So this enforces
+    nothing - a ceiling set from an illustration would reject Projects for
+    the wrong reason.
 
-    A repository does not contain its images, so usually there is nothing to
-    weigh and this says which images would be pulled instead. Where the
-    caller supplies the real registry and tag - a deploy, or a CI job that
-    has just built - the local daemon is asked, and what it answers is bytes
-    on disk, which is still not the number that matters.
+    It weighs nothing either. A repository contains no images, and the bytes
+    a laptop happens to have on disk are neither the number the open question
+    needs nor a number CI could agree with - and a report that says something
+    different in two places is worse than one that says nothing. Ticket 16
+    measures what a pull actually transfers.
     """
     if project.rendered is None:
         return
-
-    import os
-
-    prefix = os.environ.get("IMAGE_REPO_PREFIX")
-    tag = os.environ.get("IMAGE_TAG")
-
     for name, definition in project.services:
-        written = _as_written(definition.get("image") or "")
-        if not (prefix and tag):
-            yield name + " pulls " + written + " - not weighed (a repository "                   "holds no images; set IMAGE_REPO_PREFIX and IMAGE_TAG to "                   "weigh what is on this machine)"
-            continue
-        reference = (definition.get("image") or "").replace(
-            compose.SENTINEL["IMAGE_REPO_PREFIX"], prefix
-        ).replace(compose.SENTINEL["IMAGE_TAG"], tag)
-        size = _local_image_size(reference)
-        if size is None:
-            yield name + " pulls " + reference + " - not on this machine, "                   "so nothing was weighed"
-        else:
-            yield name + " pulls " + reference + " - {0:.0f} MB on disk, "                   "which is not what a pull transfers (ticket 16 measures "                   "that)".format(size / 1e6)
-
-
-def _as_written(reference):
-    """A rendered image reference, with the sentinels put back as variables."""
-    for name, value in compose.SENTINEL.items():
-        reference = reference.replace(value, "${" + name + "}")
-    return reference
-
-
-def _local_image_size(reference):
-    import subprocess
-
-    try:
-        proc = subprocess.run(
-            ["docker", "image", "inspect", "--format", "{{.Size}}", reference],
-            capture_output=True,
-            text=True,
-            timeout=15,
+        yield (
+            name + " pulls " + _as_written(definition.get("image") or "")
+            + " - size not measured; ticket 16 measures what a pull "
+            "transfers, which is not bytes on disk"
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0:
-        return None
-    try:
-        return int(proc.stdout.strip())
-    except ValueError:
-        return None

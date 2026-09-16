@@ -14,6 +14,8 @@ here rather than passing a Project it should have refused.
 
 import re
 
+from . import CheckerError
+
 SUPPORTED = {
     # assertions
     "type", "required", "properties", "additionalProperties", "enum", "const",
@@ -32,7 +34,7 @@ TYPES = {
 }
 
 
-class UnsupportedSchema(Exception):
+class UnsupportedSchema(CheckerError):
     """The schema uses a keyword this validator does not implement."""
 
 
@@ -89,6 +91,21 @@ def _matches(schema, value):
     return not _errors(schema, value, "")
 
 
+def _matches_pattern(pattern, value):
+    """`pattern`, minus Python's willingness to ignore a trailing newline.
+
+    Every pattern in this schema anchors with `^...$`, and Python's `$` also
+    matches just before a final newline - so a slug with a line break after
+    it satisfies the slug pattern, and that slug goes on to become a Compose
+    project name and a Traefik router name. A value carrying a line break
+    never matches here: a deliberate narrowing of JSON Schema's semantics,
+    in the one direction that cannot let something through.
+    """
+    if any(character in value for character in ("\n", "\r")):
+        return False
+    return re.search(pattern, value) is not None
+
+
 def _errors(schema, value, path):
     """Validate `value` against `schema`; return human-readable problems."""
     if schema is True or schema == {}:
@@ -120,12 +137,19 @@ def _errors(schema, value, path):
 
     if isinstance(value, str):
         pattern = schema.get("pattern")
-        if pattern is not None and not re.search(pattern, value):
+        if pattern is not None and not _matches_pattern(pattern, value):
             out.append(
                 "{0} must match {1} (found {2!r})".format(where, pattern, value)
             )
         if "minLength" in schema and len(value) < schema["minLength"]:
-            out.append(where + " must not be empty")
+            if schema["minLength"] == 1:
+                out.append(where + " must not be empty")
+            else:
+                out.append(
+                    "{0} must be at least {1} characters".format(
+                        where, schema["minLength"]
+                    )
+                )
         if "maxLength" in schema and len(value) > schema["maxLength"]:
             out.append(
                 "{0} must be at most {1} characters".format(

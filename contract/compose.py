@@ -30,6 +30,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from . import CheckerError
+
 COMPOSE_FILE = "docker-compose.prod.yml"
 
 # Values the platform supplies at deploy time. A Project may not default any
@@ -76,6 +78,10 @@ def variable_uses(text):
     """Every variable the Compose source interpolates, with how it was written."""
     uses = []
     for index, line in enumerate(text.splitlines(), start=1):
+        # A commented-out line is a line Compose never reads, and a rule that
+        # fires on one is a rule nobody trusts the second time.
+        if line.lstrip().startswith("#"):
+            continue
         # `$$` is Compose's escape for a literal dollar; it interpolates nothing.
         scrubbed = line.replace("$$", "")
         for match in _BRACED.finditer(scrubbed):
@@ -120,10 +126,14 @@ def render(tree):
             env=environment,
         )
     except FileNotFoundError:
-        return None, (
-            "docker compose is not installed, and the contract is asserted "
-            "against the rendered Compose file rather than its text. Install "
-            "Docker Compose and run the check again."
+        # Not a violation: this machine cannot run the check, and the Project
+        # is not what is wrong. Reporting it as a failed rule would send
+        # somebody to edit a Compose file to fix a missing Docker.
+        raise CheckerError(
+            "docker compose is not installed. The contract is asserted "
+            "against the rendered Compose file rather than its text - a Stack "
+            "whose ports: arrive through a variable would otherwise pass - so "
+            "there is nothing this checker can say without it."
         )
     finally:
         os.unlink(empty_env)
@@ -150,12 +160,10 @@ def services(rendered):
 
 
 def labels(definition):
-    """A service's labels as a dict, whichever form the file wrote them in."""
-    found = definition.get("labels") or {}
-    if isinstance(found, list):
-        out = {}
-        for entry in found:
-            key, _, value = str(entry).partition("=")
-            out[key.strip()] = value.strip()
-        return out
-    return dict(found)
+    """A service's labels.
+
+    Always a map: a Compose file may write them as a list, and the render
+    normalises that away before the rules ever see it. This reads the
+    rendered file, so there is one form to handle rather than two.
+    """
+    return dict(definition.get("labels") or {})
