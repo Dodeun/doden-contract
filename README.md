@@ -63,7 +63,8 @@ to fix their laptop.
 | `audit/settings.py` | The only networked code in here: one Project's settings, read off GitHub. |
 | `audit/report.py` | The report, and the Discord message. |
 | `audit/fixtures/` | Recorded settings, and an overlay for every tier-2 rule. |
-| `tests/` | The suite that runs both. |
+| `release.sh` | Publishing a version: the checks, then the four git commands. |
+| `tests/` | The suite that runs all three. |
 
 `audit.py` and the `audit/` package share a name, and Python resolves that
 towards the package: `import audit` is `audit/__init__.py`, and the entry
@@ -113,6 +114,8 @@ python3 -m unittest discover -s tests
 Versions are pinned by a **moving major tag**. A Project pins `@v1` and picks
 up fixes without doing anything.
 
+You edit three files and merge them; `./release.sh` does the rest.
+
 1. Update `VERSION`.
 2. Set `ref:` in `.github/workflows/contract-check.yml` to the same exact
    version. This is the step that is easy to forget and expensive to get
@@ -124,17 +127,50 @@ up fixes without doing anything.
 3. If a rule changed, say so in `CONTRACT.md` — that copy is what every
    Project reads, and a rule the prose does not mention is a rule that will
    surprise somebody.
-4. Commit, tag the exact version, then move the major onto the same commit:
+4. Merge, then from `main`:
 
 ```sh
-git tag v1.0.1
-git tag -f v1
+./release.sh --dry-run   # says what would happen, touches nothing
+./release.sh
+```
+
+### What the script refuses, and why each one is there
+
+It never repairs anything. A release is a published thing, so the moment to
+be difficult is before the push — and a real run stops at the first problem
+while `--dry-run` reports all of them, because being told one at a time is
+how you fix three things in three rounds.
+
+| It refuses when | Because |
+| --- | --- |
+| you are not on `main`, the tree is dirty, or `main` and `origin/main` differ | what gets tagged is a commit, not your files. An uncommitted fix would be missing from the release and present on your disk, which is the hardest kind of difference to notice |
+| `VERSION`, the workflow's `ref:` and `CONTRACT.md`'s version line disagree | those are the three places a release lives, and nothing complains at the time when they drift apart |
+| the exact version already exists | either it is released — bump `VERSION` — or a previous run half-failed, and which of those it is should be your decision rather than a script's guess |
+| CI has not gone green on the commit | it asks GitHub about *that commit*, not your laptop. `skipped` counts as an answer; `neutral` does not |
+| afterwards, the remote does not show both tags on the commit | a push can fail after the local tag exists. The difference between "released" and "released on my machine" is exactly what this script is for |
+
+Then it does the four commands:
+
+```sh
+git tag v1.0.1          # the receipt, and it never moves
+git tag -f v1           # the address everything loads, and it moves every release
 git push origin v1.0.1
 git push -f origin v1
 ```
 
+**The second tag is the one that matters and the one that gets forgotten.**
+Pushing only the receipt published nothing: on 2026-09-19 it left `v1` on a
+commit written before `audit.py` existed, and the weekly tier-2 audit died
+with `can't open file audit.py` in a repository nobody was watching. The
+script's last act is to read both tags back off the remote and refuse to
+claim a release that did not land.
+
 Because the major tag lands on the commit whose workflow names the matching
 exact version, `@v1` and `@v1.0.1` run the same bytes.
+
+Its git mechanics are tested against a real bare remote — both tag kinds, the
+major moving between two releases, and the forgotten-major mistake itself —
+by `tests/release-mechanics.sh`, which the suite runs.
 
 A change that would newly refuse a Project which passes today is a **major**
 bump. Projects move to a new major deliberately, one at a time, by changing
