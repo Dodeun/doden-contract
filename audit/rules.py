@@ -162,6 +162,21 @@ def _inactive(settings, target: str, *patterns) -> list:
     ]
 
 
+def _once(*groups) -> list:
+    """The rulesets in these groups, each counted once.
+
+    A ruleset whose condition includes both `~DEFAULT_BRANCH` and the literal
+    branch name lands in two of them, and without this it is reported twice
+    for the same empty-bypass failure - two lines in Discord about one
+    setting, which is how a report starts being skimmed.
+    """
+    seen = []
+    for ruleset in [rs for group in groups for rs in group]:
+        if not any(kept is ruleset for kept in seen):
+            seen.append(ruleset)
+    return seen
+
+
 @rule("protect-main", "the default branch cannot be pushed to, rewritten or deleted")
 def protect_main(settings, platform):
     """The one control that still holds if an agent token leaks.
@@ -191,7 +206,8 @@ def protect_main(settings, platform):
         )
         return
 
-    for finding in _ruleset_integrity("protect-main", covering + literal, "A branch"):
+    relied_on = _once(covering, literal)
+    for finding in _ruleset_integrity("protect-main", relied_on, "A branch"):
         yield finding
 
     if literal and not covering:
@@ -203,7 +219,7 @@ def protect_main(settings, platform):
             "protected the moment the branch is renamed, silently.",
         )
 
-    enforced = _enforced(covering + literal)
+    enforced = _enforced(relied_on)
     for name in BRANCH_RULES:
         if name not in enforced:
             yield Finding(

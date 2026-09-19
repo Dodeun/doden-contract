@@ -107,11 +107,28 @@ def run(projects: list, against: Platform, token: str | None) -> dict:
     }
 
 
+def read_json(path: Path):
+    """Read a JSON file, or say which file could not be read.
+
+    Every one of these is a setup mistake rather than a verdict about a
+    Project, so each becomes exit 2. A JSONDecodeError left to escape is a
+    traceback, and a traceback exits 1 - the status that means "drifted",
+    which is the one thing it must never be mistaken for.
+    """
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise AuditError(f"{path} is not valid JSON: {exc}") from exc
+
+
 def read_projects(path: Path) -> list:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    names = payload["projects"] if isinstance(payload, dict) else payload
+    payload = read_json(path)
+    names = payload.get("projects") if isinstance(payload, dict) else payload
     if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
-        raise AuditError(f"{path} should hold a list of `owner/name` strings")
+        raise AuditError(
+            f"{path} should hold a list of `owner/name` strings, under a "
+            "`projects` key or on its own"
+        )
     return names
 
 
@@ -134,12 +151,15 @@ def main(argv=None) -> int:
         help="recorded settings, read from disk - no token and no network",
     )
     parser.add_argument("--json", action="store_true", help="emit the verdict as JSON")
-    parser.add_argument(
+    # Mutually exclusive rather than merely documented: `--message` promises
+    # to post nothing, and a promise a flag combination can break is not one.
+    reporting_mode = parser.add_mutually_exclusive_group()
+    reporting_mode.add_argument(
         "--discord",
         action="store_true",
         help="post the verdict to DISCORD_WEBHOOK_URL as well as printing it",
     )
-    parser.add_argument(
+    reporting_mode.add_argument(
         "--message",
         action="store_true",
         help="print the Discord message instead of the report, and post "
@@ -161,10 +181,7 @@ def main(argv=None) -> int:
     try:
         against = platform()
         if args.settings:
-            entries = [
-                Settings.from_dict(json.loads(p.read_text(encoding="utf-8")))
-                for p in args.settings
-            ]
+            entries = [Settings.from_dict(read_json(p)) for p in args.settings]
             token = None
         else:
             entries = read_projects(args.projects)

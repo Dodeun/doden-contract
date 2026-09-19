@@ -24,3 +24,17 @@ class AuditError(Exception):
     the two, because an audit that cannot see is indistinguishable from an
     audit that sees nothing wrong.
     """
+
+
+class NotPermitted(AuditError):
+    """This token may not read that setting, which is a narrower thing.
+
+    It exists so that exactly one question - the one about repository
+    variables - can be left unanswered when the token does not carry the
+    permission, without the same `except` also swallowing a rate limit or a
+    name that does not resolve. Those are still exit 2.
+
+    The distinction is the whole reason the audit can be run with two
+    permissions instead of three and still be honest about which of its
+    rules it did not check.
+    """
