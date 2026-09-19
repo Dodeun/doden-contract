@@ -1,0 +1,7 @@
+{
+  "fires": ["protect-main"],
+  "why": "An exclusion inside the condition is a hole in a ruleset that is otherwise correct, and the ruleset list still shows it as active.",
+  "rulesets": {
+    "protect-main": { "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": ["refs/heads/main"] } } }
+  }
+}

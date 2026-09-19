@@ -1,0 +1,5 @@
+{
+  "fires": ["contract-version"],
+  "why": "A Project moves to a new major deliberately, so nothing starts failing on its own - and the cost of that is a Project that can sit on an old major indefinitely. This is what notices.",
+  "settings": { "manifest": { "contractVersion": "v0" } }
+}

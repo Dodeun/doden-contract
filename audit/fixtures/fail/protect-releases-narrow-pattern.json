@@ -1,0 +1,7 @@
+{
+  "fires": ["protect-releases"],
+  "why": "A pattern that covers some release tags and not others. The audit refuses to interpret it rather than re-implementing GitHub's matcher and getting it subtly wrong in the Project's favour.",
+  "rulesets": {
+    "protect-releases": { "conditions": { "ref_name": { "include": ["refs/tags/v1.*"], "exclude": [] } } }
+  }
+}

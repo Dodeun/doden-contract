@@ -1,0 +1,5 @@
+{
+  "fires": ["protect-main", "required-checks"],
+  "why": "Nothing protects the default branch, so a leaked `contents: write` token can push straight to it. The required checks go with it: a check nothing enforces is a check that reports.",
+  "rulesets": { "protect-main": null }
+}

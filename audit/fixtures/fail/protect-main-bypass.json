@@ -1,0 +1,7 @@
+{
+  "fires": ["protect-main"],
+  "why": "The shape drift actually takes: nobody deletes a ruleset, somebody adds themselves to its bypass list to get one thing done and it stays there.",
+  "rulesets": {
+    "protect-main": { "bypass_actors": [{ "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }] }
+  }
+}

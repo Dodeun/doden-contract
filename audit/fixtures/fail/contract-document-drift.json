@@ -1,0 +1,5 @@
+{
+  "fires": ["contract-document"],
+  "why": "The comparison the tier-1 checker deliberately does not make, so that a prose fix does not fail every Project at once. Here it is a report, so it can afford to be exact: the document somebody reads in that repository is not the one being enforced.",
+  "settings": { "contract_document": "an older copy of CONTRACT.md\n" }
+}

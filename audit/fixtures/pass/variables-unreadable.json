@@ -1,0 +1,6 @@
+{
+  "fires": [],
+  "not_checked": ["no-repository-variables"],
+  "why": "The token could not read repository variables. That is an unanswered question, not an answer in the Project's favour - and the audit would rather hold one permission fewer than report a pass it did not earn.",
+  "settings": { "variables": null }
+}

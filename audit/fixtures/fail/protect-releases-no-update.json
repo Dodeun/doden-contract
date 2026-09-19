@@ -1,0 +1,7 @@
+{
+  "fires": ["protect-releases"],
+  "why": "The trap this ticket named and measuring confirmed: deletion protection is not immutability. With `deletion` and `non_fast_forward` alone, a release tag can still be moved forward onto any descendant commit - including a hostile commit built on top of the reviewed one.",
+  "rulesets": {
+    "protect-releases": { "rules": [{ "type": "deletion" }, { "type": "non_fast_forward" }] }
+  }
+}

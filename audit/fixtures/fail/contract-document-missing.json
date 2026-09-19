@@ -1,0 +1,5 @@
+{
+  "fires": ["contract-document"],
+  "why": "Without it the rules are not legible from inside the Project at all, which is the thing ADR-0010 bought by copying the document in.",
+  "settings": { "contract_document": null }
+}

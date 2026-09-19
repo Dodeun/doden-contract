@@ -1,0 +1,5 @@
+{
+  "fires": ["no-repository-variables"],
+  "why": "ADR-0010, and the one that actually happened: `APP_HOST` was a repository variable on this platform's first Project until the Manifest replaced it. A value nothing in the files mentions is invisible to an agent whose scope is the repository.",
+  "settings": { "variables": ["APP_HOST"] }
+}
