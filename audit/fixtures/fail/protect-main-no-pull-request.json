@@ -1,0 +1,19 @@
+{
+  "fires": ["protect-main"],
+  "why": "Force-push and deletion are refused, and a direct push is not. The ruleset exists, is active, has an empty bypass list, and does not do the one thing it is for.",
+  "rulesets": {
+    "protect-main": {
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "required_status_checks": [{ "context": "test" }, { "context": "contract / tier-1" }]
+          }
+        }
+      ]
+    }
+  }
+}

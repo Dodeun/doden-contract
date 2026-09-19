@@ -1,0 +1,13 @@
+{
+  "fires": ["required-checks"],
+  "why": "The suite and the contract check still run and still report. Nothing stops the merge, which is the difference between a gate and a notification.",
+  "rulesets": {
+    "protect-main": {
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        { "type": "pull_request", "parameters": { "required_approving_review_count": 0 } }
+      ]
+    }
+  }
+}

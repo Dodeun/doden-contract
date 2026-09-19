@@ -229,6 +229,99 @@ a laptop happens to have are neither the number the open question needs nor a
 number CI could agree with. When a pull has actually been measured, this
 becomes a rule and the contract's version changes.
 
+## Tier 2 — the repository's own settings
+
+Everything above is a file, so it travels in a copy of a repository and the
+Project checks it itself, asking for no secret. None of what follows is a
+file. A ruleset does not copy with `gh repo create --template` — measured on
+a real copy: `rulesets: 0`, `variables: 0`, `secrets: 0` — and reading one
+needs a credential.
+
+So tier 2 is **audited centrally**, on a schedule, over a list of Projects,
+with one token in one place. No Project holds a credential that can read its
+own settings, which is what keeps the tier-1 check safe to publish: a
+workflow that asks for no secret cannot leak one.
+
+**The audit reports; it does not block.** The rulesets below are what block.
+What the audit is for is the exception somebody added to unblock themselves
+and forgot — a thing no check running inside the Project could ever see. An
+exception added once is the same as not having the rule.
+
+### `protect-main` — the default branch cannot be pushed to, rewritten or deleted
+
+An active branch ruleset covering `~DEFAULT_BRANCH`, carrying `pull_request`,
+`deletion` and `non_fast_forward`, with an **empty bypass list** — the owner
+included.
+
+This is the only control in the chain that still holds if an agent token
+carrying `contents: write` leaks. Everything else — the secrets manager, the
+ephemeral `GITHUB_TOKEN`, the SSH key — protects secrets rather than history.
+The target is `~DEFAULT_BRANCH` and not a literal branch name, because
+renaming the branch would otherwise leave the protection pointing at nothing;
+a literal is reported as the weakness it is rather than as an absence.
+
+### `required-checks` — a pull request cannot land until the platform's checks pass
+
+A `required_status_checks` rule naming at least `test` and
+`contract / tier-1`, with `strict` on.
+
+Without it the checks run, go red, and the merge button stays green:
+reporting a failure and refusing a merge are different things. `strict` is
+the second half — without it a branch can land on a trunk it was never tested
+against, which makes the trunk the thing that discovers the problem. A
+Project requiring *more* contexts is not drift.
+
+### `protect-releases` — an existing release tag cannot be moved or deleted
+
+An active tag ruleset covering `refs/tags/v*`, carrying `update`, `deletion`
+and `non_fast_forward`, with an empty bypass list.
+
+A branch ruleset covers branches, and **a tag is what deploys**. Without
+this, a leaked `contents: write` token needs nothing else: move `v1.2.0` onto
+a commit of its choosing and the next deploy of that release ships it, with
+the default branch untouched throughout.
+
+`update` is the rule that does the work, and the other two do not replace it.
+Measured against a throwaway repository on 2026-09-18: with `deletion` and
+`non_fast_forward` alone, a `v*` tag can still be moved **forward** onto any
+descendant commit — including a hostile commit built on top of the reviewed
+one. Deletion protection is not immutability.
+
+Creating a tag stays allowed, because tagging a release is the operator's
+deliberate act. That leaves a residue this tier cannot close — a *new* tag on
+a commit that was never reviewed — and it is closed in the Profile instead:
+the deploy workflow refuses a release whose commit is not an ancestor of the
+default branch.
+
+### `contract-version` — the Project pins the version that is current
+
+`contractVersion` in the Manifest, against the contract the audit runs from.
+
+A Project moves major deliberately and nothing moves it for them, which is
+the point. The cost is that a Project can sit on an old version indefinitely
+with nothing failing, and this is what notices.
+
+### `contract-document` — the copy of this file is the canonical one
+
+Compared byte for byte, with line endings normalised.
+
+The tier-1 `contract-version` rule compares the pinned *version* and not the
+text, on purpose: a prose fix must not fail every Project at once. Here it is
+only a report, so it can afford to be exact. A copy that has drifted is worse
+than no copy, because it reads as authoritative.
+
+### `no-repository-variables` — configuration is the Manifest
+
+`gh variable list` on a conforming Project returns nothing.
+
+A repository variable is invisible to an agent whose scope is the repository:
+nothing in the files says the value exists, so a Project whose bundle is
+compiled against a hostname its own files never mention is opaque in exactly
+the way this platform rules out. Reading them needs a token permission the
+audit would rather not hold than hold unnecessarily, so a token without it
+reports this rule as **not checked** — which is deliberately not the same as
+passed.
+
 ## Versions
 
 Pinned by a moving major tag. `@v1` is the current `v1.x.y`, so a Project

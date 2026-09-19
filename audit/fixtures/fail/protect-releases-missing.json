@@ -1,0 +1,5 @@
+{
+  "fires": ["protect-releases"],
+  "why": "The gap carried from ticket 05 to ticket 14: a branch ruleset does not cover tags, and a tag is what deploys.",
+  "rulesets": { "protect-releases": null }
+}

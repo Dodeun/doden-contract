@@ -1,0 +1,20 @@
+{
+  "fires": ["required-checks"],
+  "why": "A branch can land on a trunk it was never tested against, which makes the trunk the thing that discovers the problem. Configured this way once on this platform, and reversed a run later.",
+  "rulesets": {
+    "protect-main": {
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        { "type": "pull_request", "parameters": { "required_approving_review_count": 0 } },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": false,
+            "required_status_checks": [{ "context": "test" }, { "context": "contract / tier-1" }]
+          }
+        }
+      ]
+    }
+  }
+}

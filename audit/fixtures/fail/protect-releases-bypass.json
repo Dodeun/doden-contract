@@ -1,0 +1,7 @@
+{
+  "fires": ["protect-releases"],
+  "why": "Someone needed to move a tag once. The tags have not been immutable since, and nothing says so anywhere a person looks.",
+  "rulesets": {
+    "protect-releases": { "bypass_actors": [{ "actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always" }] }
+  }
+}

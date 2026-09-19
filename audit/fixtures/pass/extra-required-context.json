@@ -1,0 +1,24 @@
+{
+  "fires": [],
+  "why": "A Project requiring more than the platform's floor is not drift. `selfcheck` is required by every Project made from the Template and by none of the Projects that predate it, so the floor is a minimum rather than a list.",
+  "rulesets": {
+    "protect-main": {
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        { "type": "pull_request", "parameters": { "required_approving_review_count": 0 } },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "required_status_checks": [
+              { "context": "test" },
+              { "context": "contract / tier-1" },
+              { "context": "selfcheck" }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

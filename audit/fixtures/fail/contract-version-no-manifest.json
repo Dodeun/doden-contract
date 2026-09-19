@@ -1,0 +1,5 @@
+{
+  "fires": ["contract-version"],
+  "why": "No Manifest, so the Project states no version to compare. Tier 1 refuses this on every pull request; the audit says it rather than reporting the Project as conforming to a version it never named.",
+  "settings": { "manifest": null, "manifest_error": "platform.json is missing" }
+}

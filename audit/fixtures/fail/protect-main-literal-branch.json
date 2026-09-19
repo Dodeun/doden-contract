@@ -1,0 +1,7 @@
+{
+  "fires": ["protect-main"],
+  "why": "Protected today, unprotected the moment the branch is renamed - and the rename is exactly what happened to this platform's first Project.",
+  "rulesets": {
+    "protect-main": { "conditions": { "ref_name": { "include": ["refs/heads/main"], "exclude": [] } } }
+  }
+}

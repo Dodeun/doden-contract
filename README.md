@@ -50,15 +50,25 @@ to fix their laptop.
 
 | | |
 | --- | --- |
-| `CONTRACT.md` | The rules in prose. Copied into every Project, unedited. |
+| `CONTRACT.md` | The rules in prose, both tiers. Copied into every Project, unedited. |
 | `platform.schema.json` | The Manifest's schema. A Project points `$schema` at it for editor support; the checker reads it from its own checkout. |
-| `check.py` | The entry point. |
-| `contract/rules.py` | The rules. One function each, with the reason in its docstring. |
+| `check.py` | The tier-1 entry point. |
+| `contract/rules.py` | The tier-1 rules. One function each, with the reason in its docstring. |
 | `contract/compose.py` | Rendering the Stack, and reading the source for the rules a render erases. |
 | `contract/schema.py` | A JSON Schema validator covering exactly what the schema uses. |
 | `contract/project.py` | The tree under judgement, read once. |
-| `fixtures/` | A conforming Project, and a failing example for every rule. |
-| `tests/` | The suite that runs them. |
+| `fixtures/` | A conforming Project, and a failing example for every tier-1 rule. |
+| `audit.py` | The tier-2 entry point. |
+| `audit/rules.py` | The tier-2 rules — repository settings — same shape, one function each. |
+| `audit/settings.py` | The only networked code in here: one Project's settings, read off GitHub. |
+| `audit/report.py` | The report, and the Discord message. |
+| `audit/fixtures/` | Recorded settings, and an overlay for every tier-2 rule. |
+| `tests/` | The suite that runs both. |
+
+`audit.py` and the `audit/` package share a name, and Python resolves that
+towards the package: `import audit` is `audit/__init__.py`, and the entry
+point is reached by running it. Tier 1's pair sidesteps the question by
+being called `check.py` and `contract/`.
 
 ## The dependencies, and why there are none
 
@@ -131,10 +141,39 @@ bump. Projects move to a new major deliberately, one at a time, by changing
 the `@v1` in their workflow and the `contractVersion` in their Manifest —
 nothing starts failing on its own.
 
-## What this does not do
+Changing `CONTRACT.md` puts every Project's copy out of date until each one
+is updated. Nothing fails because of it — the tier-1 rule compares the pinned
+*version*, not the text, so a prose fix cannot refuse every Project at once —
+but the tier-2 audit reports the drift by name, which is the point of having
+it. Update the copies in the same breath, or expect the audit to say so.
 
-Tier 2 — the repository's own settings — is audited centrally, from the
-platform repository, with one token in one place. It cannot live here,
-because a workflow that can read a repository's settings needs a credential,
-and giving every Project one would destroy the property that makes this
-check safe to publish: **it asks for no secret, so it cannot leak one.**
+## Tier 2, and why the token is not here
+
+Tier 2 is the repository's own settings: the rulesets, the required checks,
+the empty bypass list. None of it is a file, so none of it travels in a copy
+of a repository, and reading it needs a credential.
+
+`audit.py` is that judgement, and it holds no credential and no list of
+Projects:
+
+```sh
+# against recorded settings - no token, no network
+python3 audit.py --settings audit/fixtures/conforming.json
+
+# against real repositories
+AUDIT_TOKEN=... python3 audit.py --projects projects.json
+```
+
+**The schedule, the list of Projects and the token live in the private
+platform repository**, which is the deliberate part. This repository is
+public because it holds no secret and asks for none — that is what removes a
+per-Project access grant, and it is a claim printed at the top of this file.
+Putting the platform's most dangerous credential here, in the one repository
+whose defining property is that it has none, would make that claim false.
+
+`AUDIT_TOKEN` may read repository settings and may write nothing. Exit status
+is the checker's: **0** every Project conforms, **1** something drifted, **2**
+the audit could not run — no token, a Project that answers 404. A Project
+that could not be read is never reported as conforming, because an audit that
+cannot see is otherwise indistinguishable from an audit that sees nothing
+wrong.

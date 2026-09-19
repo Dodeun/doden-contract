@@ -1,0 +1,5 @@
+{
+  "fires": ["protect-main", "required-checks"],
+  "why": "A ruleset in evaluate mode looks identical on the settings page and refuses nothing. This is the drift that is hardest to see by reading.",
+  "rulesets": { "protect-main": { "enforcement": "evaluate" } }
+}

@@ -1,0 +1,20 @@
+{
+  "fires": ["required-checks"],
+  "why": "The suite is required and the contract check is not, so a Project can merge a Stack the platform will refuse to deploy.",
+  "rulesets": {
+    "protect-main": {
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        { "type": "pull_request", "parameters": { "required_approving_review_count": 0 } },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "required_status_checks": [{ "context": "test" }]
+          }
+        }
+      ]
+    }
+  }
+}
