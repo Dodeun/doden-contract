@@ -26,6 +26,9 @@ API_VERSION = "2022-11-28"
 # same way.
 ADDON_DOCUMENTS = "docs/addons"
 
+# How many of them this will read per Project. See `fetch`.
+MAX_ADDON_DOCUMENTS = 25
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -161,10 +164,17 @@ def fetch(repository: str, token: str) -> Settings:
     # docs/addons/database.md with no database is describing a capability it
     # has not got, which is precisely what `oauth` was.
     addon_documents = {}
-    for entry in _get(f"/repos/{repository}/contents/{ADDON_DOCUMENTS}", token) or []:
-        name = entry.get("name", "")
-        if entry.get("type") != "file" or not name.endswith(".md"):
-            continue
+    listed = [
+        entry.get("name", "")
+        for entry in _get(f"/repos/{repository}/contents/{ADDON_DOCUMENTS}", token) or []
+        if entry.get("type") == "file" and entry.get("name", "").endswith(".md")
+    ]
+    # Bounded, because this is a directory in somebody else's repository and
+    # this audit runs unattended on a schedule: without a ceiling, a Project
+    # that put four hundred files there would make four hundred requests
+    # every Monday. Sorted so the ceiling cuts the same documents each week
+    # rather than a different arbitrary set. There is one Add-on.
+    for name in sorted(listed)[:MAX_ADDON_DOCUMENTS]:
         addon_documents[name[: -len(".md")]] = _get(
             f"/repos/{repository}/contents/{ADDON_DOCUMENTS}/{name}", token, raw=True
         )

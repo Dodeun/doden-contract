@@ -1,8 +1,7 @@
-# A conforming production Stack, with the database Add-on declared.
+# The database Add-on declared, and nothing in the Stack handed the URL of
+# the database it declares. It joins `data` and connects to nothing.
 #
-# This is the fixture every failing example is an overlay on, so it is
-# deliberately the smallest Stack that still has something for every tier-1
-# rule to judge: two services, both routed, one of them on `data`.
+# An overlay on `base`, which is where the header this one replaces belongs.
 name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
 
 services:

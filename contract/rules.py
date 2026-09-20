@@ -155,8 +155,10 @@ def addon_provider(project):
     for name in sorted(addons):
         supported = PROVIDERS.get(name)
         if supported is None:
-            # An Add-on the platform does not have at all is refused by the
-            # Manifest's closed list of keys, one rule earlier. Nothing to add.
+            # An Add-on with nothing to configure - the empty object the
+            # Manifest's schema allows - names no provider and owes none.
+            # An Add-on the platform does not have at all never reaches here:
+            # the Manifest's closed list of keys refuses it one rule earlier.
             continue
         declared = (addons[name] or {}).get("provider")
         if declared in supported:
@@ -503,17 +505,16 @@ def database_url(project):
             "and connects to nothing.",
         )
 
-    for name in carrying:
-        if declared:
-            continue
-        yield Violation(
-            "database-url",
-            "service " + name + " is handed " + DATABASE_URL + ", but "
-            'platform.json declares no "database" Add-on. Nothing created a '
-            "role, a database or that secret for this Project, so the value "
-            "is either absent or another Project's. Declare the Add-on, or "
-            "stop passing it.",
-        )
+    if not declared:
+        for name in carrying:
+            yield Violation(
+                "database-url",
+                "service " + name + " is handed " + DATABASE_URL + ", but "
+                'platform.json declares no "database" Add-on. Nothing created '
+                "a role, a database or that secret for this Project, so the "
+                "value is either absent or another Project's. Declare the "
+                "Add-on, or stop passing it.",
+            )
 
 
 @rule("identity-variables", "the values the platform supplies fail rather than guess")

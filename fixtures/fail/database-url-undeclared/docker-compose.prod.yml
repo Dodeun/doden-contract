@@ -1,8 +1,9 @@
-# A conforming production Stack, with the database Add-on declared.
+# DATABASE_URL handed to a service whose Manifest declares no database - a
+# Project nobody created a role for, reaching for a secret that is not in its
+# Doppler project.
 #
-# This is the fixture every failing example is an overlay on, so it is
-# deliberately the smallest Stack that still has something for every tier-1
-# rule to judge: two services, both routed, one of them on `data`.
+# The `data` network is deliberately absent, so `networks` stays quiet and
+# this fixture fires exactly the rule it is named after.
 name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
 
 services:

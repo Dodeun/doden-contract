@@ -174,10 +174,16 @@ class Project:
         that changed the shape and may not know a version changed at all - so
         it says which version this Manifest is, which one is running, and what
         the new shape looks like, and it says it *instead of* the schema's
-        complaints rather than beside them. Every one of those is downstream
-        of the shape: a `v1` Manifest also has no seed command under the new
-        conditional, and reporting that too would send somebody to add a field
-        they already have.
+        complaints rather than beside them, because the ones the shape
+        causes drown the message explaining it: a `v1` Manifest also has no
+        seed command under the new conditional, and reporting that would send
+        somebody to add a field they already have.
+
+        The cost is that a `v1` Manifest with an *unrelated* fault - a missing
+        slug, a typo'd host - is told about the shape first and about the
+        fault on the next run. Two rounds rather than one, and the right trade
+        here: nothing else about this Manifest can be judged until its shape
+        is the shape being judged.
         """
         addons = data.get("addons")
         if isinstance(addons, list):
