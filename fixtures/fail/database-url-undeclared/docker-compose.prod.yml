@@ -1,7 +1,8 @@
-# The same Stack with the database Add-on switched off: no `data` network,
-# and no DATABASE_URL handed to anything. Both halves, because the contract
-# reads both ways - `networks` refuses `data` without the declaration and
-# `database-url` refuses the value without it.
+# A conforming production Stack, with the database Add-on declared.
+#
+# This is the fixture every failing example is an overlay on, so it is
+# deliberately the smallest Stack that still has something for every tier-1
+# rule to judge: two services, both routed, one of them on `data`.
 name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
 
 services:
@@ -11,6 +12,7 @@ services:
     environment:
       NODE_ENV: production
       API_BASE_URL: https://${APP_HOST}/api
+      DATABASE_URL:
     networks:
       - web
     healthcheck:

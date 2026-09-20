@@ -24,6 +24,12 @@
 #
 # Every check below refuses rather than repairs. A release is a published
 # thing, so the moment to be difficult is before the push, not after.
+#
+# The major it moves is the one in VERSION and no other. When a new major is
+# released the old one *freezes* where it stands - `v1` has not moved since
+# `v2.0.0` - because a Project pinned at a moving tag can be handed a
+# breaking change it never agreed to, on a morning nobody chose. Nothing here
+# enforces that beyond arithmetic: this script only ever touches `${VERSION%%.*}`.
 
 set -euo pipefail
 

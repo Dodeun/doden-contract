@@ -7,7 +7,8 @@
   "addons": {
     "database": {
       "provider": "postgresql"
-    }
+    },
+    "oauth": {}
   },
   "contractVersion": "v2",
   "seedCommand": "npm run seed --workspace=backend"

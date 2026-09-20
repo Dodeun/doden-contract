@@ -26,13 +26,13 @@ From a Project's CI:
 ```yaml
 jobs:
   contract:
-    uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v1
+    uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v2
 ```
 
 From a working tree:
 
 ```sh
-git clone --depth 1 -b v1 https://github.com/Dodeun/doden-contract ~/.doden-contract
+git clone --depth 1 -b v2 https://github.com/Dodeun/doden-contract ~/.doden-contract
 python3 ~/.doden-contract/check.py .
 ```
 
@@ -51,6 +51,7 @@ to fix their laptop.
 | | |
 | --- | --- |
 | `CONTRACT.md` | The rules in prose, both tiers. Copied into every Project, unedited. |
+| `docs/addons/` | One document per Add-on, versioned with the schema. Copied into a Project that declares that Add-on, and removed from one that does not. The directory is the list: the tier-2 audit holds every file in it up against the Project's copy. |
 | `platform.schema.json` | The Manifest's schema. A Project points `$schema` at it for editor support; the checker reads it from its own checkout. |
 | `check.py` | The tier-1 entry point. |
 | `contract/rules.py` | The tier-1 rules. One function each, with the reason in its docstring. |
@@ -111,8 +112,17 @@ python3 -m unittest discover -s tests
 
 ## Releasing
 
-Versions are pinned by a **moving major tag**. A Project pins `@v1` and picks
+Versions are pinned by a **moving major tag**. A Project pins `@v2` and picks
 up fixes without doing anything.
+
+**`v1` is frozen.** It points at `v1.0.1`, where ticket `14` left it, and it
+will not move again. A Project still pinned at `@v1` keeps passing the rules
+it was written against, and the tier-2 `contract-version` rule is what tells
+it that it is behind — weekly, in a report. That is the whole reason a major
+tag stops moving once a newer major exists: `v2` deletes the `oauth` Add-on
+and changes the shape of `addons`, and publishing either of those under a tag
+somebody already pins would turn a live Project red on a morning nobody
+chose. The tag that moves is only ever the newest one.
 
 You edit three files and merge them; `./release.sh` does the rest.
 
@@ -120,7 +130,7 @@ You edit three files and merge them; `./release.sh` does the rest.
 2. Set `ref:` in `.github/workflows/contract-check.yml` to the same exact
    version. This is the step that is easy to forget and expensive to get
    wrong: the workflow pins the checker it runs, so a Project calling
-   `@v1.0.1` must get the `v1.0.1` checker and not whatever `v1` points at
+   `@v2.0.0` must get the `v2.0.0` checker and not whatever `v2` points at
    today. A Project running rules its own `CONTRACT.md` does not describe is
    the disagreement the `contract-version` rule exists to catch, arriving
    from the one direction that rule cannot see.
@@ -152,10 +162,10 @@ how you fix three things in three rounds.
 Then it does the four commands:
 
 ```sh
-git tag v1.0.1          # the receipt, and it never moves
-git tag -f v1           # the address everything loads, and it moves every release
-git push origin v1.0.1
-git push -f origin v1
+git tag v2.0.0          # the receipt, and it never moves
+git tag -f v2           # the address everything loads, and it moves every release
+git push origin v2.0.0
+git push -f origin v2
 ```
 
 **The second tag is the one that matters and the one that gets forgotten.**
@@ -166,7 +176,7 @@ script's last act is to read both tags back off the remote and refuse to
 claim a release that did not land.
 
 Because the major tag lands on the commit whose workflow names the matching
-exact version, `@v1` and `@v1.0.1` run the same bytes.
+exact version, `@v2` and `@v2.0.0` run the same bytes.
 
 Its git mechanics are tested against a real bare remote — both tag kinds, the
 major moving between two releases, and the forgotten-major mistake itself —
@@ -174,8 +184,9 @@ by `tests/release-mechanics.sh`, which the suite runs.
 
 A change that would newly refuse a Project which passes today is a **major**
 bump. Projects move to a new major deliberately, one at a time, by changing
-the `@v1` in their workflow and the `contractVersion` in their Manifest —
-nothing starts failing on its own.
+the `@v2` in their workflow and the `contractVersion` in their Manifest —
+nothing starts failing on its own, and the major they are leaving stays where
+it is so that leaving it stays their decision.
 
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned

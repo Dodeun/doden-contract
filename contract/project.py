@@ -149,6 +149,11 @@ class Project:
             self.manifest_problems = [MANIFEST + " must contain a JSON object."]
             return
 
+        older = self._older_shape(data)
+        if older:
+            self.manifest_problems = older
+            return
+
         definition = json.loads(
             (self.contract_root / SCHEMA).read_text(encoding="utf-8")
         )
@@ -160,6 +165,47 @@ class Project:
             return
         self.manifest = data
 
+    def _older_shape(self, data):
+        """A Manifest written for an earlier contract, told so in those terms.
+
+        The schema's own answer to a `v1` Manifest is that "addons" must be an
+        object and not an array, which is true and is not what anybody needs
+        to read. The person who meets this message has not opened the ticket
+        that changed the shape and may not know a version changed at all - so
+        it says which version this Manifest is, which one is running, and what
+        the new shape looks like, and it says it *instead of* the schema's
+        complaints rather than beside them. Every one of those is downstream
+        of the shape: a `v1` Manifest also has no seed command under the new
+        conditional, and reporting that too would send somebody to add a field
+        they already have.
+        """
+        addons = data.get("addons")
+        if isinstance(addons, list):
+            return [
+                MANIFEST + ' declares "addons" as an array, which is the shape '
+                "contract v1 used. The checker running is "
+                + self.contract_major + ", where addons is an object whose "
+                "keys are the Add-ons and whose values carry that Add-on's "
+                'configuration: "addons": { "database": { "provider": '
+                '"postgresql" } }. A Project with no Add-ons writes {}. '
+                "There is no `oauth` Add-on any more and nothing replaced it - "
+                "a login is the Project's own code (ADR-0013) - so it comes "
+                "out of the Manifest and stays in the application. Move this "
+                "Project by changing the Manifest and the tag its workflow "
+                "calls together, or keep it on v1 by pinning the workflow at "
+                "@v1, which no longer moves."
+            ]
+        if isinstance(addons, dict) and "oauth" in addons:
+            return [
+                MANIFEST + ' declares an "oauth" Add-on. There is not one. An '
+                "Add-on is an optional dependency on a Shared Platform Service, "
+                "and this platform runs no identity provider (ADR-0009): a "
+                "login is the Project's own code however much of it there is "
+                "(ADR-0013). Remove the key; nothing else about the Project's "
+                "login changes."
+            ]
+        return []
+
     # -- convenience for the rules ---------------------------------------
 
     @property
@@ -168,11 +214,25 @@ class Project:
 
     @property
     def addons(self):
-        return list(self.manifest.get("addons", [])) if self.manifest else None
+        """The declared Add-ons: a name mapped to that Add-on's configuration.
+
+        `None` - not `{}` - when the Manifest could not be read at all. An
+        Add-on rule must be able to tell "this Project declares none" from
+        "nobody knows what this Project declares", because the `networks` and
+        `database-url` rules refuse in *both* directions and would otherwise
+        refuse a Project whose only fault is a Manifest the first rule has
+        already reported.
+        """
+        return dict(self.manifest.get("addons", {})) if self.manifest else None
 
     def has_addon(self, name):
         addons = self.addons
         return addons is not None and name in addons
+
+    def addon(self, name):
+        """One Add-on's configuration, or `None` when it is not declared."""
+        addons = self.addons
+        return (addons or {}).get(name) if addons is not None else None
 
     def note(self, text):
         self.notes.append(text)

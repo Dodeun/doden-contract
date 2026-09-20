@@ -19,6 +19,28 @@ from . import compose
 # default is banned on all four and the error form is required on these.
 REQUIRE_ERROR_FORM = ("PROJECT_SLUG", "IMAGE_TAG")
 
+# The Shared Platform Services this platform actually runs, per Add-on. One
+# entry, one value, and that is ADR-0005: there is one database engine.
+#
+# **This is the list, and the schema is deliberately not a second copy of
+# it.** The Manifest's `provider` is a string of the right shape; which
+# strings the platform can honour is policy, it changes when an ADR changes,
+# and it belongs where it can be *reported* - in the same verdict as the
+# other sixteen rules, naming what is supported. An enum in the schema would
+# refuse the same Manifest one layer earlier, as `manifest`, with a message
+# about a failed assertion and no way for the `addon-provider` rule ever to
+# fire - a rule whose failing case cannot be constructed is a rule that has
+# never run. Widening this is the same size of act either way: a rule change,
+# which is a contract version bump.
+PROVIDERS = {"database": ("postgresql",)}
+
+# What a Project hands a Stack that has a database. Named here rather than in
+# the rule so the two directions cannot drift apart.
+DATABASE_URL = "DATABASE_URL"
+
+# The one-way channel a Project keeps open to the platform it runs on.
+FINDINGS_DOC = "PLATFORM-FINDINGS.md"
+
 
 @dataclass(frozen=True)
 class Violation:
@@ -108,6 +130,71 @@ def contract_version(project):
             'platform.json declares contractVersion "' + declared + '", but '
             "the checker running is " + running + ". Either pin the workflow "
             "at @" + declared + " or move this Project to " + running + ".",
+        )
+
+
+@rule("addon-provider", "every declared Add-on names a provider the platform runs")
+def addon_provider(project):
+    """An Add-on is a dependency on something that has to actually be there.
+
+    ADR-0013: an Add-on is an optional dependency on a Shared Platform
+    Service. `provider` is the Manifest saying *which* one, and this is the
+    list of the ones that exist - one engine, because ADR-0005 says so.
+
+    The point of the key is not that a Project may pick an engine. It is that
+    the Manifest stops asserting, in its own shape, that there could never be
+    a second one: the day ADR-0005 is revisited, a second value goes in the
+    tuple above and no Manifest changes shape. Until then this rule is what
+    says no, in the same verdict as everything else rather than as a schema
+    error somebody has to read separately.
+    """
+    addons = project.addons
+    if addons is None:
+        return  # the Manifest rule already said so
+
+    for name in sorted(addons):
+        supported = PROVIDERS.get(name)
+        if supported is None:
+            # An Add-on the platform does not have at all is refused by the
+            # Manifest's closed list of keys, one rule earlier. Nothing to add.
+            continue
+        declared = (addons[name] or {}).get("provider")
+        if declared in supported:
+            continue
+        yield Violation(
+            "addon-provider",
+            'the "' + name + '" Add-on names the provider '
+            + repr(declared) + ", which this platform does not run. It runs: "
+            + ", ".join(supported) + ". An Add-on is a dependency on a service "
+            "the platform operates, so a provider nothing answers for is a "
+            "Project that would deploy and then fail to connect to anything.",
+        )
+
+
+@rule("platform-findings", FINDINGS_DOC + " exists")
+def platform_findings(project):
+    """The channel out of a Project, kept open by being required.
+
+    Existence and nothing more. An empty file is a true statement, and a
+    Project that has learned nothing worth carrying should not have to invent
+    something to write.
+
+    What it is for: a Project is the only place where what this platform is
+    actually like gets discovered, and a Project created next year by
+    somebody who deleted the file would close that channel without anybody
+    noticing - the same failure shape as a Project missing from the audit's
+    list. Requiring the file is what turns a habit into a property.
+    """
+    if FINDINGS_DOC not in project.files:
+        yield Violation(
+            "platform-findings",
+            FINDINGS_DOC + " is missing. It is where this Project writes down "
+            "what it learned about the platform that would be true for any "
+            "Project on it - the things that are only discoverable by "
+            "building something here. An empty file is a fine answer and is "
+            "what a new Project ships; what is not fine is the file being "
+            "absent, because then there is nowhere for the next person to "
+            "look and nothing to say that there should have been.",
         )
 
 
@@ -364,6 +451,68 @@ def networks(project):
             'platform.json declares the "database" Add-on, but the Stack does '
             "not join the data network, so nothing in it can reach the shared "
             "Postgres.",
+        )
+
+
+@rule(
+    "database-url",
+    "the Stack is handed DATABASE_URL exactly when it declares a database",
+    needs_render=True,
+)
+def database_url(project):
+    """The other half of what declaring the database Add-on means.
+
+    `networks` says the Stack is on `data`; this says something in it is
+    handed the URL of a database to reach over it. Both directions, for the
+    same reason `networks` reads both ways: an Add-on that can be half-applied
+    is an Add-on whose declaration is decorative. A Manifest declaring a
+    database whose Stack is handed no URL comes up and cannot connect; a Stack
+    handed a URL whose Manifest declares nothing is a Project nobody created a
+    role for, reaching for a secret that is not in its Doppler project.
+
+    **Any service, not a named one.** The contract names no language and no
+    service role - `backend` is the Profile's word, and a Project of another
+    Profile may call it something else - so the question this asks is whether
+    the Stack is handed the value, not which container gets it. Which one it
+    should be is the Profile's business.
+
+    Read from the rendered file with the sentinel identity values, like every
+    rule that can be: a service that takes the value from the deploying
+    process (`DATABASE_URL:`, with no value) and one that writes a literal
+    are the same shape to this rule, and the literal is a committed secret
+    that `no-committed-env` would not catch. Worth its own rule, and it is
+    not this one.
+    """
+    if project.manifest is None:
+        return  # the Manifest rule already said so; nothing to compare against
+
+    declared = project.has_addon("database")
+    carrying = [
+        name
+        for name, definition in project.services
+        if DATABASE_URL in dict(definition.get("environment") or {})
+    ]
+
+    if declared and not carrying:
+        yield Violation(
+            "database-url",
+            'platform.json declares the "database" Add-on and no service in '
+            "the Stack is handed " + DATABASE_URL + ". The platform writes "
+            "that value into the Doppler project it creates with the role and "
+            "the database; a Stack that never reads it joins the data network "
+            "and connects to nothing.",
+        )
+
+    for name in carrying:
+        if declared:
+            continue
+        yield Violation(
+            "database-url",
+            "service " + name + " is handed " + DATABASE_URL + ", but "
+            'platform.json declares no "database" Add-on. Nothing created a '
+            "role, a database or that secret for this Project, so the value "
+            "is either absent or another Project's. Declare the Add-on, or "
+            "stop passing it.",
         )
 
 

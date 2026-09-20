@@ -34,6 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "audit" / "fixtures"
 CANONICAL_DOCUMENT = "the canonical CONTRACT.md\n"
+CANONICAL_ADDON_DOCUMENT = "the canonical database Add-on document\n"
 STUB_VERSION = "v1.0.0"
 
 
@@ -44,6 +45,14 @@ def install() -> Path:
     shutil.copytree(ROOT / "audit", home / "audit")
     (home / "VERSION").write_text(STUB_VERSION)
     (home / "CONTRACT.md").write_text(CANONICAL_DOCUMENT, encoding="utf-8")
+    # Stubbed for the same reason as CONTRACT.md: the rule compares a
+    # Project's copy against *this* checkout's, and a fixture carrying the
+    # real document would be rewritten every time a sentence of it changes.
+    # The directory is the list of Add-ons that have a document, so one file
+    # here is one documented Add-on in the fixture world.
+    addons = home / "docs" / "addons"
+    addons.mkdir(parents=True)
+    (addons / "database.md").write_text(CANONICAL_ADDON_DOCUMENT, encoding="utf-8")
     return home
 
 

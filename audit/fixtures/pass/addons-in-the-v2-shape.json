@@ -1,0 +1,12 @@
+{
+  "why": "The audit runs over Projects pinned at different majors at once, so it reads both shapes of `addons`. A rule that understood only the shape the fixture happens to be recorded in would go quiet on every Project that migrated.",
+  "settings": {
+    "manifest": {
+      "addons": {
+        "database": {
+          "provider": "postgresql"
+        }
+      }
+    }
+  }
+}

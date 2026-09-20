@@ -1,0 +1,11 @@
+{
+  "fires": [
+    "contract-document"
+  ],
+  "why": "The Add-on is declared and its document is not there. That document says what declaring it commits the Project to - the engine, the seed command, the migration discipline, what the backup does unasked - and it is copied in rather than looked up, so without it nobody in that repository can read what they signed up for.",
+  "settings": {
+    "addon_documents": {
+      "database": null
+    }
+  }
+}

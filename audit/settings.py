@@ -21,6 +21,11 @@ from . import AuditError, NotPermitted
 API = "https://api.github.com"
 API_VERSION = "2022-11-28"
 
+# Where an Add-on's document lives in a Project, which is where it lives in
+# this repository. One path, so that a copy and its original are found the
+# same way.
+ADDON_DOCUMENTS = "docs/addons"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -38,6 +43,7 @@ class Settings:
     manifest: dict | None = None
     manifest_error: str | None = None
     contract_document: str | None = None
+    addon_documents: dict = field(default_factory=dict)
     variables: list | None = None
 
     @classmethod
@@ -149,6 +155,20 @@ def fetch(repository: str, token: str) -> Settings:
 
     document = _get(f"/repos/{repository}/contents/CONTRACT.md", token, raw=True)
 
+    # Listed rather than asked for by name, so that a document for an Add-on
+    # the Project does not declare is *visible*. Asking only for the ones it
+    # declares would make the two directions unaskable: a Project carrying
+    # docs/addons/database.md with no database is describing a capability it
+    # has not got, which is precisely what `oauth` was.
+    addon_documents = {}
+    for entry in _get(f"/repos/{repository}/contents/{ADDON_DOCUMENTS}", token) or []:
+        name = entry.get("name", "")
+        if entry.get("type") != "file" or not name.endswith(".md"):
+            continue
+        addon_documents[name[: -len(".md")]] = _get(
+            f"/repos/{repository}/contents/{ADDON_DOCUMENTS}/{name}", token, raw=True
+        )
+
     # Variables need their own token permission, and the audit is meant to
     # hold the fewest it can. A token without it reports the question as
     # unanswered rather than answered in the Project's favour - which is why
@@ -172,5 +192,6 @@ def fetch(repository: str, token: str) -> Settings:
         manifest=manifest,
         manifest_error=manifest_error,
         contract_document=document,
+        addon_documents=addon_documents,
         variables=variables,
     )
