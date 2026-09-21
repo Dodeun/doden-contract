@@ -144,6 +144,15 @@ You edit three files and merge them; `./release.sh` does the rest.
 ./release.sh
 ```
 
+**A new major has one more step, in another repository.** The tier-2 audit in
+`Dodeun/doden-infra` checks this contract out at a major tag — the `ref:` in
+`.github/workflows/tier-2-audit.yml` there — and the previous major freezes the
+moment a new one exists. So after releasing a new major, move that `ref:` to
+it. Until it moves, the audit judges every Project against the previous
+contract and reports the ones that have moved as drifted, which is what
+happened for a day after `v2.0.0`. `release.sh` prints this as a `NOTE`
+whenever the major tag it is about to create does not exist yet.
+
 ### What the script refuses, and why each one is there
 
 It never repairs anything. A release is a published thing, so the moment to

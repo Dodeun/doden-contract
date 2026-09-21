@@ -160,6 +160,17 @@ if [ -n "$current_major" ]; then
   echo "  $major currently points at ${current_major:0:7}, and will move to ${local_head:0:7}"
 else
   echo "  $major does not exist yet, and will be created at ${local_head:0:7}"
+  # A new major is the one release with a step in another repository. The
+  # tier-2 audit checks this contract out at a major tag, and the previous
+  # major freezes the moment this one exists - so until somebody moves the
+  # audit's pin, it goes on judging every Project against the old contract
+  # and reports the ones that moved as drifted. That happened for a day after
+  # v2.0.0. Said here, at the moment it matters, not only in the README.
+  echo
+  echo "  NOTE: $major is a new major. Once it is released, move the tier-2 audit's"
+  echo "        contract pin to it - the 'ref:' line in .github/workflows/tier-2-audit.yml"
+  echo "        in Dodeun/doden-infra. Until it moves, the audit judges every Project"
+  echo "        against the previous major, and reports the ones on $major as drifted."
 fi
 
 # ---------------------------------------------------------------- CI's verdict

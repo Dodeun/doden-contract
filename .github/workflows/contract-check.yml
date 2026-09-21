@@ -29,6 +29,13 @@ permissions:
   contents: read
 
 jobs:
+  # **Do not rename this job, and do not give it a `name:`.** It is the second
+  # half of `contract / tier-1`, the required status check in every Project's
+  # ruleset. GitHub builds that name from the caller's job and this one, so
+  # renaming this changes the check for every Project the moment the major tag
+  # moves - and every one of them stops being able to merge, on a morning
+  # nobody chose. That is a breaking change to the contract however it is
+  # spelled, and it needs a new major.
   tier-1:
     runs-on: ubuntu-latest
 

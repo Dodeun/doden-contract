@@ -1,4 +1,4 @@
-name: Tests
+name: Checker, audit and release tests
 
 # This repository's own CI. Two things it proves, and they are different:
 #
@@ -22,6 +22,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # **Do not rename this job, and do not give it a `name:`.** Its id, `test`,
+  # is the required status check in this repository's `protect-main`, and
+  # GitHub matches it by that exact string. Renamed, no pull request can
+  # merge - and `release.sh` refuses to tag a commit CI has not passed. The
+  # workflow's `name:` at the top is what says what this job is.
   test:
     runs-on: ubuntu-latest
 
@@ -31,12 +36,12 @@ jobs:
       # No setup-python step: the checker runs on whatever python3 the
       # machine has, standard library only, and pinning a version here would
       # be testing a python nobody runs it with.
-      - name: Which python and which compose
+      - name: Print the Python and Docker Compose versions in use
         run: |
           python3 --version
           docker compose version
 
-      - name: The fixtures
+      - name: Run every suite - tier-1 fixtures, tier-2 audit, release mechanics
         run: python3 -m unittest discover -s tests -v
 
       # The fixtures are trees built for this purpose, so they can agree with
