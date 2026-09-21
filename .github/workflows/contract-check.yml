@@ -4,7 +4,7 @@ name: Platform Contract (tier 1)
 #
 #   jobs:
 #     contract:
-#       uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v1
+#       uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v2
 #
 # This repository is public so that call needs no access grant. A private
 # reusable workflow would need the reusable-workflow access setting turned on
@@ -42,20 +42,20 @@ jobs:
           path: project
 
       # Pinned to an exact version, stamped by the release (see README's
-      # Releasing). Not the moving `v1`: a Project that pinned this workflow
-      # at @v1.0.0 and then got a v1.1.0 checker would be running rules its
+      # Releasing). Not the moving `v2`: a Project that pinned this workflow
+      # at @v2.0.0 and then got a v2.1.0 checker would be running rules its
       # own CONTRACT.md does not describe - which is the disagreement the
       # contract-version rule exists to catch, arriving from the one
       # direction that rule cannot see.
       #
-      # A caller using @v1 still gets whatever v1 currently points at,
+      # A caller using @v2 still gets whatever v2 currently points at,
       # because the tag moves onto the commit whose workflow names the
       # matching version.
       - name: Check out the contract
         uses: actions/checkout@v7
         with:
           repository: Dodeun/doden-contract
-          ref: v1.0.1
+          ref: v2.0.0
           path: contract
 
       # The same command a human runs, against the same file - not a

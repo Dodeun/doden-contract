@@ -52,6 +52,13 @@ def platform() -> Platform:
     return Platform(
         contract_version=version.split(".", 1)[0],
         contract_document=(HERE / "CONTRACT.md").read_text(encoding="utf-8"),
+        # The Add-ons that have a document *are* the ones with a document:
+        # this directory is the list, so a new Add-on's document is audited
+        # from the moment it is written, with nothing to register anywhere.
+        addon_documents={
+            path.stem: path.read_text(encoding="utf-8")
+            for path in sorted((HERE / "docs" / "addons").glob("*.md"))
+        },
     )
 
 

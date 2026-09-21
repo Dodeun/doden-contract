@@ -1,6 +1,6 @@
 # The Platform Contract
 
-Contract version: `v1`
+Contract version: `v2`
 
 The rules a Project's repository must satisfy to be deployable by the
 platform. This file is canonical in
@@ -36,13 +36,13 @@ disagree.
 ```yaml
 jobs:
   contract:
-    uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v1
+    uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v2
 ```
 
 **From a working tree**, by a human or by an agent:
 
 ```sh
-git clone --depth 1 -b v1 https://github.com/Dodeun/doden-contract ~/.doden-contract   # once
+git clone --depth 1 -b v2 https://github.com/Dodeun/doden-contract ~/.doden-contract   # once
 python3 ~/.doden-contract/check.py .                                                   # per run
 ```
 
@@ -54,17 +54,17 @@ must not be able to break because of somebody else's release.
 
 `platform.json`, at the root, is the Project's identity — and the first rule,
 because every other rule reads it. Its schema is
-[`platform.schema.json`](https://github.com/Dodeun/doden-contract/blob/v1/platform.schema.json).
+[`platform.schema.json`](https://github.com/Dodeun/doden-contract/blob/v2/platform.schema.json).
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Dodeun/doden-contract/v1/platform.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Dodeun/doden-contract/v2/platform.schema.json",
   "slug": "example-project",
   "appName": "Example Project",
   "appHost": "example.doden.dev",
   "profile": "node-web",
-  "addons": ["database", "oauth"],
-  "contractVersion": "v1",
+  "addons": { "database": { "provider": "postgresql" } },
+  "contractVersion": "v2",
   "seedCommand": "npm run seed --workspace=backend"
 }
 ```
@@ -75,9 +75,38 @@ because every other rule reads it. Its schema is
 | `appName` | The Project's name where a person reads it. |
 | `appHost` | The public hostname. Read at image-build time as well as at deploy time — a frontend bundle is compiled against it — so changing it means republishing, not redeploying. |
 | `profile` | The Template this Project was copied from. A closed list: the contract names no language, and a Profile is the one place a language is allowed to appear, so adding one is a version bump rather than a free-text field. |
-| `addons` | Optional capabilities declared rather than inherited — `database`, `oauth`. Shared files stay byte-identical across Projects and enable the behaviour conditionally, which is what keeps drift from the Template measurable. |
+| `addons` | The **Add-ons** this Project declares: an object whose keys are the Add-ons and whose values carry that Add-on's configuration. Today there is one, `database`, and it carries a `provider`. A Project with none writes `{}`. |
 | `contractVersion` | The major version this Project is held to. Matches the tag its workflow pins and the version this file carries. |
 | `seedCommand` | The command a Preview runs to fill an empty database with synthetic data. Required when `database` is declared. |
+
+### What an Add-on is, and what it is not
+
+An Add-on is an **optional dependency on a Shared Platform Service** — a
+service the platform runs, that no Project owns and more than one can depend
+on. *Optional* is the whole of the distinction: Traefik and the `web` network
+are shared too, and they are not Add-ons, because every Project depends on
+them and none declares them.
+
+A capability a Project implements **for itself** is not an Add-on, however
+much code it takes and however many Projects end up writing it. A login, a
+scraper, a third-party integration: those are the Project's, and the platform
+has nothing to provide, nothing to provision, and nothing to take away when
+the Project is deleted.
+
+**There is no `oauth` Add-on**, and its absence is the surprising part rather
+than an oversight: contract `v1` accepted the name and nothing was ever behind
+it. ADR-0013 is where that was decided — the platform runs no identity
+provider (ADR-0009), so a login is code a Project writes and keeps.
+
+`provider` names which engine backs an Add-on. The platform runs one database
+engine (ADR-0005), so there is one value it accepts today — but the Manifest
+records it as a value rather than asserting in its own shape that there could
+never be a second. Which values are honoured is the `addon-provider` rule
+below, so that the answer arrives in the same verdict as every other rule.
+
+Declaring an Add-on commits a Project to what that Add-on's document says:
+`docs/addons/database.md`, canonical in this repository beside this file,
+copied into the Project and removed with the Add-on.
 
 Configuration lives here rather than in repository variables because a
 repository variable is invisible to an agent that can only see the
@@ -96,6 +125,29 @@ judged, and an agent that opens the repository cannot say where it deploys.
 This file, the Manifest's `contractVersion`, and the checker must agree. A
 copy that pins another version is prose that reads as authoritative and is
 not being enforced, which is worse than having no copy at all.
+
+### `addon-provider` — every declared Add-on names a provider the platform runs
+
+An Add-on is a dependency on a service the platform operates, so the engine
+it names has to be one that exists. Today: `database` is backed by
+`postgresql` and by nothing else, which is ADR-0005.
+
+This is a rule rather than a closed list in the schema on purpose. Which
+providers exist is policy that changes when an ADR changes, and it belongs
+where it can be *reported* — in this verdict, naming what is supported —
+rather than one layer earlier, as a Manifest that failed an assertion.
+
+### `platform-findings` — `PLATFORM-FINDINGS.md` exists
+
+Existence and nothing more. An empty file is a true statement, and a Project
+that has learned nothing worth carrying should not have to invent something.
+
+A Project is the only place where what this platform is actually like gets
+discovered, and what it learns is worth more to the next Project than to
+itself. A Project created next year by somebody who deleted the file would
+close that channel with nothing saying so — the same shape of failure as a
+Project missing from the audit's list. Requiring the file is what makes the
+channel a property of a Project rather than a habit of whoever built it.
 
 ### `compose-file` — the production Stack renders from the Manifest alone
 
@@ -179,6 +231,23 @@ Project's own that Traefik is not on, and the Stack comes up unreachable.
 Project's frontend sits on it — and a database server does not belong within
 reach of all of them. A Stack reaches the shared Postgres because its
 Manifest declares a database, or it does not reach it at all.
+
+### `database-url` — the Stack is handed `DATABASE_URL` exactly when it declares a database
+
+`networks` says the Stack is on `data`; this says something in it is handed
+the address of a database to reach over it. Both directions, for the same
+reason `networks` reads both ways: an Add-on that can be half-applied is an
+Add-on whose declaration is decorative.
+
+A Manifest declaring a database whose Stack is handed no URL comes up and
+connects to nothing. A Stack handed a URL whose Manifest declares nothing is
+a Project nobody created a role for, reaching for a secret that is not in its
+Doppler project.
+
+Any service, not a named one: `backend` is the Profile's word for a
+container's role, and this contract names none. Which container should get
+the value is the Profile's business; that the Stack gets it is the
+platform's.
 
 ### `healthchecks` — every service declares one
 
@@ -301,14 +370,27 @@ A Project moves major deliberately and nothing moves it for them, which is
 the point. The cost is that a Project can sit on an old version indefinitely
 with nothing failing, and this is what notices.
 
-### `contract-document` — the copy of this file is the canonical one
+### `contract-document` — the copies of the platform's documents are canonical
 
-Compared byte for byte, with line endings normalised.
+This file, and each declared Add-on's document, compared byte for byte with
+line endings normalised.
 
 The tier-1 `contract-version` rule compares the pinned *version* and not the
 text, on purpose: a prose fix must not fail every Project at once. Here it is
 only a report, so it can afford to be exact. A copy that has drifted is worse
 than no copy, because it reads as authoritative.
+
+The Add-on documents are judged the same way and in both directions, because
+they travel the same way: copied in with the Add-on, removed with it. A
+Project carrying `docs/addons/database.md` and declaring no database is
+describing a capability it does not have — which is exactly what `oauth` was
+for a version and a half — and a Project that declares one and carries a copy
+from two versions ago is reading rules that are not the ones being enforced.
+
+Tier 1 checks neither. Documents that are *copies of the platform's* can only
+be judged against the originals, and only this tier can see them; a tier-1
+rule could ask that a file exists and never that it says the right thing,
+which is the half that matters.
 
 ### `no-repository-variables` — configuration is the Manifest
 
@@ -324,8 +406,16 @@ passed.
 
 ## Versions
 
-Pinned by a moving major tag. `@v1` is the current `v1.x.y`, so a Project
-pinned at `@v1` picks up fixes without doing anything.
+Pinned by a moving major tag. `@v2` is the current `v2.x.y`, so a Project
+pinned at `@v2` picks up fixes without doing anything.
+
+**`v1` is frozen.** It points where it pointed on the day `v2` was released
+and it will not move again. A Project pinned at `@v1` keeps passing the rules
+it was written against, indefinitely, and the tier-2 `contract-version` rule
+is what says it is behind — weekly, in a report, rather than by turning red
+on a morning nobody chose. That is the whole reason the tag stopped moving: a
+breaking change published under a tag somebody already pins is a change they
+never agreed to.
 
 Changing a rule is a version bump. A change that would newly refuse a Project
 which passes today is a **major** bump, and Projects move to it deliberately,

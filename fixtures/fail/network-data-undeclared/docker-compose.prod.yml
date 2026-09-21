@@ -1,7 +1,8 @@
-# The same Stack with the database Add-on switched off: no `data` network,
-# and no DATABASE_URL handed to anything. Both halves, because the contract
-# reads both ways - `networks` refuses `data` without the declaration and
-# `database-url` refuses the value without it.
+# The Stack on the `data` network with a Manifest that declares no database.
+#
+# DATABASE_URL is deliberately absent: with the Add-on undeclared it would
+# fire `database-url` as well, and a fixture that fires two rules says which
+# of them it is about to nobody.
 name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
 
 services:
@@ -13,6 +14,7 @@ services:
       API_BASE_URL: https://${APP_HOST}/api
     networks:
       - web
+      - data
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:4000/health || exit 1"]
       interval: 10s
@@ -52,4 +54,6 @@ services:
 
 networks:
   web:
+    external: true
+  data:
     external: true

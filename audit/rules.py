@@ -21,7 +21,7 @@ convention.
 """
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # What a pull request must be judged by before it can land. `test` is the
 # suite, `contract / tier-1` is this contract's own checker - the compound
@@ -65,6 +65,7 @@ class Platform:
 
     contract_version: str
     contract_document: str
+    addon_documents: dict = field(default_factory=dict)
     required_contexts: tuple = REQUIRED_CONTEXTS
 
 
@@ -367,7 +368,27 @@ def contract_version(settings, platform):
         )
 
 
-@rule("contract-document", "the Project's copy of CONTRACT.md is the canonical one")
+def _declared_addons(manifest) -> set:
+    """The Add-ons a Manifest declares, in either shape it has been written in.
+
+    The audit runs over Projects pinned at different majors at the same time -
+    that is what the `contract-version` rule is for - so it reads `v1`'s array
+    of names and `v2`'s object of names and configuration. Nothing here judges
+    which shape it found: a Project on an older major has a version to move,
+    and the rule above is what says so.
+    """
+    addons = (manifest or {}).get("addons")
+    if isinstance(addons, dict):
+        return set(addons)
+    if isinstance(addons, list):
+        return {name for name in addons if isinstance(name, str)}
+    return set()
+
+
+@rule(
+    "contract-document",
+    "the platform's documents in this Project are the canonical copies",
+)
 def contract_document(settings, platform):
     """The comparison the checker deliberately does not make.
 
@@ -377,6 +398,14 @@ def contract_document(settings, platform):
     authoritative. The checker compares the pinned *version* and not the
     text, so that a prose fix does not fail every Project at once. Here it
     is only a report, so it can afford to be exact.
+
+    An Add-on's document travels the same way - copied in with the Add-on and
+    removed with it - so it is judged the same way, and in both directions.
+    A Project carrying `docs/addons/database.md` and declaring no database is
+    describing a capability it has not got, which is exactly what `oauth`
+    was. Only a Project on the current major is asked: an older one predates
+    these documents, and reporting it for missing a file that did not exist
+    when it was written would be the `contract-version` finding said twice.
     """
     if settings.contract_document is None:
         yield Finding(
@@ -384,16 +413,59 @@ def contract_document(settings, platform):
             "CONTRACT.md is missing, so the rules are not readable from "
             "inside this Project. Tier 1 refuses this too.",
         )
+    else:
+        theirs = _digest(settings.contract_document)
+        ours = _digest(platform.contract_document)
+        if theirs != ours:
+            yield Finding(
+                "contract-document",
+                f"CONTRACT.md differs from the canonical copy ({theirs[:12]} "
+                f"against {ours[:12]}). Nothing is failing because of it - the "
+                "rules being enforced are the ones in this audit - but the "
+                "document somebody reads in that repository is not them.",
+            )
+
+    if (settings.manifest or {}).get("contractVersion") != platform.contract_version:
         return
-    theirs = _digest(settings.contract_document)
-    ours = _digest(platform.contract_document)
-    if theirs != ours:
+
+    declared = _declared_addons(settings.manifest)
+    carried = {
+        name: text
+        for name, text in (settings.addon_documents or {}).items()
+        if text is not None
+    }
+
+    for name in sorted(declared):
+        canonical = platform.addon_documents.get(name)
+        if canonical is None:
+            continue  # an Add-on with nothing to document owes no document
+        if name not in carried:
+            yield Finding(
+                "contract-document",
+                f"declares the `{name}` Add-on and carries no "
+                f"docs/addons/{name}.md. That document says what declaring it "
+                "commits this Project to, and it is copied in with the Add-on "
+                "rather than looked up - so without it, nobody working in "
+                "that repository can read what they signed up for.",
+            )
+            continue
+        theirs = _digest(carried[name])
+        ours = _digest(canonical)
+        if theirs != ours:
+            yield Finding(
+                "contract-document",
+                f"docs/addons/{name}.md differs from the canonical copy "
+                f"({theirs[:12]} against {ours[:12]}). Re-copy it from the "
+                "contract at the version this Project pins.",
+            )
+
+    for name in sorted(set(carried) - declared):
         yield Finding(
             "contract-document",
-            f"CONTRACT.md differs from the canonical copy ({theirs[:12]} "
-            f"against {ours[:12]}). Nothing is failing because of it - the "
-            "rules being enforced are the ones in this audit - but the "
-            "document somebody reads in that repository is not them.",
+            f"carries docs/addons/{name}.md and declares no `{name}` Add-on, "
+            "so it is documenting a capability it has not got. An Add-on's "
+            "document is removed with the Add-on; a document left behind is "
+            "how a Project comes to describe something that was never there.",
         )
 
 

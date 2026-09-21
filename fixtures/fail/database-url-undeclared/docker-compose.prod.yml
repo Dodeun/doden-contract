@@ -1,7 +1,9 @@
-# The same Stack with the database Add-on switched off: no `data` network,
-# and no DATABASE_URL handed to anything. Both halves, because the contract
-# reads both ways - `networks` refuses `data` without the declaration and
-# `database-url` refuses the value without it.
+# DATABASE_URL handed to a service whose Manifest declares no database - a
+# Project nobody created a role for, reaching for a secret that is not in its
+# Doppler project.
+#
+# The `data` network is deliberately absent, so `networks` stays quiet and
+# this fixture fires exactly the rule it is named after.
 name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
 
 services:
@@ -11,6 +13,7 @@ services:
     environment:
       NODE_ENV: production
       API_BASE_URL: https://${APP_HOST}/api
+      DATABASE_URL:
     networks:
       - web
     healthcheck:

@@ -1,7 +1,7 @@
-# The same Stack with the database Add-on switched off: no `data` network,
-# and no DATABASE_URL handed to anything. Both halves, because the contract
-# reads both ways - `networks` refuses `data` without the declaration and
-# `database-url` refuses the value without it.
+# The database Add-on declared, and nothing in the Stack handed the URL of
+# the database it declares. It joins `data` and connects to nothing.
+#
+# An overlay on `base`, which is where the header this one replaces belongs.
 name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
 
 services:
@@ -13,6 +13,7 @@ services:
       API_BASE_URL: https://${APP_HOST}/api
     networks:
       - web
+      - data
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:4000/health || exit 1"]
       interval: 10s
@@ -52,4 +53,6 @@ services:
 
 networks:
   web:
+    external: true
+  data:
     external: true

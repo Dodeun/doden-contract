@@ -1,0 +1,11 @@
+{
+  "fires": [
+    "contract-document"
+  ],
+  "why": "A document for an Add-on the Project does not declare is a Project describing a capability it has not got - which is exactly what `oauth` was for a version and a half. An Add-on's document is pruned with the Add-on, and a prune that misses one leaves the repository lying about itself.",
+  "settings": {
+    "manifest": {
+      "addons": []
+    }
+  }
+}

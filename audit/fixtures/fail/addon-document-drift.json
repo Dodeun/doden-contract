@@ -1,0 +1,11 @@
+{
+  "fires": [
+    "contract-document"
+  ],
+  "why": "A copy that has drifted is worse than no copy, for an Add-on exactly as for the contract: it reads as authoritative and is not what is being enforced. Tier 1 cannot see this - only the audit holds the original.",
+  "settings": {
+    "addon_documents": {
+      "database": "an older copy of the database document\n"
+    }
+  }
+}

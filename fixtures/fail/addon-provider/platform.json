@@ -6,7 +6,7 @@
   "profile": "node-web",
   "addons": {
     "database": {
-      "provider": "postgresql"
+      "provider": "mysql"
     }
   },
   "contractVersion": "v2",

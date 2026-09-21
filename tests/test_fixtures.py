@@ -146,6 +146,70 @@ class Manifest(FixtureCase):
     def test_an_unknown_field_is_refused(self):
         self.assertFails("fail/manifest-unknown-field", "manifest", names="apphost")
 
+    def test_a_v1_shaped_manifest_is_refused_in_the_versions_own_terms(self):
+        """The message a person actually meets when a Project is left behind.
+
+        They have not read the ticket that changed the shape and may not know
+        a version changed at all, so it has to name both versions and show
+        the new shape - not report that a value failed an assertion.
+        """
+        result = self.verdict("fail/manifest-addons-v1-shape")
+        self.assertEqual(
+            ["manifest"], sorted({v["rule"] for v in result["violations"]})
+        )
+        message = " ".join(v["message"] for v in result["violations"])
+        for names in ("v1", "v2", '"provider": "postgresql"', "@v1"):
+            self.assertIn(names, message)
+
+    def test_the_oauth_addon_is_gone_and_the_message_says_why(self):
+        self.assertFails(
+            "fail/manifest-oauth-addon", "manifest", names="ADR-0013",
+        )
+
+
+class Addons(FixtureCase):
+    """An Add-on is an optional dependency on a Shared Platform Service.
+
+    Which means three things the checker can ask: the provider is one that
+    exists, the Stack is handed the way to reach it, and a Project that
+    declares nothing is handed nothing.
+    """
+
+    def test_a_provider_the_platform_does_not_run_is_refused(self):
+        self.assertFails(
+            "fail/addon-provider", "addon-provider", names="postgresql",
+        )
+
+    def test_declaring_a_database_without_passing_its_url_is_refused(self):
+        self.assertFails(
+            "fail/database-url-missing", "database-url", names="DATABASE_URL",
+        )
+
+    def test_passing_a_database_url_without_declaring_one_is_refused(self):
+        self.assertFails(
+            "fail/database-url-undeclared", "database-url", names="backend",
+        )
+
+
+class TheChannelBackToThePlatform(FixtureCase):
+    def test_a_project_carrying_no_findings_file_is_refused(self):
+        self.assertFails(
+            "fail/platform-findings-missing", "platform-findings",
+            names="PLATFORM-FINDINGS.md",
+        )
+
+    def test_the_message_does_not_say_where_the_findings_go(self):
+        """The channel is one-way, and the rule must not leak the reverse.
+
+        A Project never needs to know that the platform's own repository
+        exists. A message naming it would put the address in every Project
+        that ever forgets the file.
+        """
+        result = self.verdict("fail/platform-findings-missing")
+        message = " ".join(v["message"] for v in result["violations"])
+        for address in ("ai-archi-brainstorm", "Dodeun/", "doden-contract"):
+            self.assertNotIn(address, message)
+
 
 class ContractDocument(FixtureCase):
     def test_a_project_carrying_no_contract_document_is_refused(self):

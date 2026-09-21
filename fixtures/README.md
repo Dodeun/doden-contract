@@ -3,8 +3,10 @@
 A rule with no failing example is a rule that has never run.
 
 `base/` is a conforming Project with the database Add-on — two services, both
-routed, one of them on `data`. It is deliberately the smallest Stack that
-still gives every tier-1 rule something to judge.
+routed, one of them on `data`, one of them handed `DATABASE_URL`. It is
+deliberately the smallest Stack that still gives every tier-1 rule something
+to judge, plus the two files a Project has to carry: `CONTRACT.md`, copied in
+by the harness, and `PLATFORM-FINDINGS.md`.
 
 Everything under `pass/` and `fail/` is an **overlay** on it: only the files
 that differ. The harness copies `base/` into a temporary directory, copies
@@ -40,3 +42,8 @@ Some fixtures exist to demonstrate something beyond their own rule:
 | `fail/image-tag-floating` | A tag that is not `latest` and still floats. A denylist of obvious names lets `v1` through - and this contract's own release process moves `v1`. |
 | `fail/healthcheck-disabled` | `disable: true` reads as configuration rather than as removal, which is what makes it the realistic evasion. |
 | `fail/network-data-missing` | The Add-on declared and the network absent. The `networks` rule reads both ways, so it needs a fixture in both. |
+| `fail/database-url-missing` and `fail/database-url-undeclared` | The same pair for the other half of the Add-on. An Add-on that can be half-applied is an Add-on whose declaration is decorative. |
+| `fail/manifest-addons-v1-shape` | A Manifest written for the previous contract. The message is the point: it names both versions and shows the new shape, because the person reading it has not opened the ticket that changed it. |
+| `fail/manifest-oauth-addon` | The Add-on that was deleted rather than implemented. Its absence is the surprising part, so the message says why (ADR-0013) instead of reporting an unknown key. |
+| `fail/addon-provider` | An engine the platform does not run. Refused by a rule rather than by the schema, so that the list of what *is* run has one home and can be reported beside every other verdict. |
+| `fail/platform-findings-missing` | The one-way channel out of a Project. Its message may not name where the findings go — a test asserts that — because a Project never needs to know this repository exists. |
