@@ -270,5 +270,21 @@ class Project:
         addons = self.addons
         return (addons or {}).get(name) if addons is not None else None
 
+    def command(self, addon, key):
+        """One command an Add-on declares - `{service, command}` - or `None`."""
+        return (self.addon(addon) or {}).get(key)
+
+    def text(self, name):
+        """A committed file's text, or `None` when there is none to read.
+
+        Both halves: `git ls-files` can list a file that has since been
+        deleted from the working tree, and a rule must report that rather
+        than crash on it.
+        """
+        path = self.tree / name
+        if name not in self.files or not path.is_file():
+            return None
+        return path.read_text(encoding="utf-8", errors="replace")
+
     def note(self, text):
         self.notes.append(text)

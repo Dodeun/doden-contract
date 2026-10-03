@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 
 from . import compose
+from .project import CONTRACT_DOC
 
 # Unset, these two produce a Stack that is silently somebody else's: an empty
 # Compose project name with Traefik routers called "-api", or an image
@@ -45,7 +46,6 @@ FINDINGS_DOC = "PLATFORM-FINDINGS.md"
 # What points an agent at it: the instruction file most agents read, which
 # has to name the findings file and the contract it is written against.
 AGENTS_DOC = "AGENTS.md"
-CONTRACT_DOC = "CONTRACT.md"
 
 # The files Claude Code reads *instead of* AGENTS.md, each with the import
 # that names AGENTS.md from where it stands - an import resolves from the file
@@ -234,7 +234,8 @@ def findings_channel(project):
     code block is a mention, which Claude Code does not follow, so neither
     counts here.
     """
-    if AGENTS_DOC not in project.files:
+    agents = project.text(AGENTS_DOC)
+    if agents is None:
         yield Violation(
             "findings-channel",
             AGENTS_DOC + " is missing. It is the instruction file most coding "
@@ -245,9 +246,8 @@ def findings_channel(project):
             "nothing points at it.",
         )
     else:
-        text = _read(project, AGENTS_DOC)
         for named in (CONTRACT_DOC, FINDINGS_DOC):
-            if named not in text:
+            if named not in agents:
                 yield Violation(
                     "findings-channel",
                     AGENTS_DOC + " never names " + named + ". It is what an "
@@ -256,9 +256,8 @@ def findings_channel(project):
                 )
 
     for name, target in CLAUDE_DOCS:
-        if name not in project.files:
-            continue
-        if _imports(_read(project, name), target):
+        text = project.text(name)
+        if text is None or _imports(text, target):
             continue
         yield Violation(
             "findings-channel",
@@ -271,27 +270,36 @@ def findings_channel(project):
         )
 
 
-_FENCE = re.compile(r"^\s*(```|~~~)")
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _CODE_SPAN = re.compile(r"(`+).*?\1")
-
-
-def _read(project, name):
-    return (project.tree / name).read_text(encoding="utf-8", errors="replace")
 
 
 def _imports(text, target):
     """Whether a CLAUDE.md imports `target`, the way Claude Code reads one.
 
     Claude Code skips code spans and fenced code blocks when it looks for
-    `@path`, so they are removed here before looking.
+    `@path`, so they are removed here before looking. A fence closes only on
+    the character that opened it, repeated at least as often, as CommonMark
+    has it - so a ``` line inside a ~~~~ block does not end the block.
+
+    The import has to stand as a word of its own: `@AGENTS.md.` at the end of
+    a sentence is refused, because nothing says Claude Code reads the full
+    stop as anything but part of the path. The message asks for a line of its
+    own, which is the form Anthropic's documentation shows.
     """
     wanted = re.compile(r"(?<!\S)@(?:\./)?" + re.escape(target) + r"(?!\S)")
-    fenced = False
+    fence = None
     for line in text.splitlines():
-        if _FENCE.match(line):
-            fenced = not fenced
-            continue
-        if not fenced and wanted.search(_CODE_SPAN.sub("", line)):
+        marker = _FENCE.match(line)
+        if marker:
+            opened = marker.group(1)
+            if fence is None:
+                fence = opened
+                continue
+            if opened[0] == fence[0] and len(opened) >= len(fence):
+                fence = None
+                continue
+        if fence is None and wanted.search(_CODE_SPAN.sub("", line)):
             return True
     return False
 
@@ -638,8 +646,8 @@ def addon_commands(project):
     services = [name for name, _ in project.services]
     for addon in sorted(addons):
         for key in COMMANDS.get(addon, ()):
-            service = ((addons[addon] or {}).get(key) or {}).get("service")
-            if service is None or service in services:
+            service = project.command(addon, key)["service"]
+            if service in services:
                 continue
             yield Violation(
                 "addon-commands",

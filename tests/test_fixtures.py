@@ -220,6 +220,12 @@ class Addons(FixtureCase):
             "fail/addon-command-service-missing", "addon-commands", names="api",
         )
 
+    def test_the_seed_command_is_checked_as_well(self):
+        self.assertFails(
+            "fail/addon-command-seed-service-missing", "addon-commands",
+            names="worker",
+        )
+
 
 class TheChannelBackToThePlatform(FixtureCase):
     def test_a_project_carrying_no_findings_file_is_refused(self):
@@ -262,6 +268,12 @@ class TheChannelIsSignposted(FixtureCase):
             names="PLATFORM-FINDINGS.md",
         )
 
+    def test_an_agents_file_that_never_names_the_contract_is_refused(self):
+        self.assertFails(
+            "fail/findings-channel-contract-unnamed", "findings-channel",
+            names="CONTRACT.md",
+        )
+
     def test_a_claude_file_that_does_not_import_the_agents_file_is_refused(self):
         self.assertFails(
             "fail/findings-channel-claude-without-import", "findings-channel",
@@ -271,6 +283,13 @@ class TheChannelIsSignposted(FixtureCase):
     def test_an_import_written_in_backticks_is_a_mention_and_is_refused(self):
         self.assertFails(
             "fail/findings-channel-import-in-a-code-span", "findings-channel",
+            names="CLAUDE.md",
+        )
+
+    def test_an_import_inside_a_fenced_block_is_refused(self):
+        """A fence closes on its own character only, as CommonMark has it."""
+        self.assertFails(
+            "fail/findings-channel-import-in-a-fenced-block", "findings-channel",
             names="CLAUDE.md",
         )
 
@@ -286,11 +305,13 @@ class TheChannelIsSignposted(FixtureCase):
     def test_a_claude_file_under_dot_claude_importing_it_passes(self):
         self.assertPasses("pass/dot-claude-imports-agents")
 
-    def test_the_message_does_not_say_where_the_findings_go(self):
-        result = self.verdict("fail/findings-channel-no-agents")
-        message = " ".join(v["message"] for v in result["violations"])
-        for address in ("ai-archi-brainstorm", "Dodeun/", "doden-contract"):
-            self.assertNotIn(address, message)
+    def test_no_message_says_where_the_findings_go(self):
+        for overlay in sorted((FIXTURES / "fail").glob("findings-channel-*")):
+            with self.subTest(fixture=overlay.name):
+                result = self.verdict("fail/" + overlay.name)
+                message = " ".join(v["message"] for v in result["violations"])
+                for address in ("ai-archi-brainstorm", "Dodeun/", "doden-contract"):
+                    self.assertNotIn(address, message)
 
 
 class ContractDocument(FixtureCase):
