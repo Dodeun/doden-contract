@@ -9,5 +9,6 @@
       "provider": "postgresql"
     }
   },
-  "contractVersion": "v2"
+  "contractVersion": "v2",
+  "seedCommand": "npm run seed --workspace=backend"
 }

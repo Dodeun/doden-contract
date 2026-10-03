@@ -1,0 +1,10 @@
+{
+  "why": "The audit runs over Projects pinned at different majors at once, so it reads both shapes of `addons`: v1's array of names, and the object every later major uses. A rule that understood only the shape the fixture happens to be recorded in would go quiet on every Project that had not moved yet.",
+  "settings": {
+    "manifest": {
+      "addons": [
+        "database"
+      ]
+    }
+  }
+}

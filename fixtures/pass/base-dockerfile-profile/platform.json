@@ -2,7 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/Dodeun/doden-contract/v3/platform.schema.json",
   "slug": "fixture-base",
   "appName": "Fixture Base",
-  "profile": "node-web",
+  "appHost": "fixture-base.example.test",
+  "profile": "base-dockerfile",
   "addons": {
     "database": {
       "provider": "postgresql",

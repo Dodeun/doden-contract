@@ -26,13 +26,13 @@ From a Project's CI:
 ```yaml
 jobs:
   contract:
-    uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v2
+    uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v3
 ```
 
 From a working tree:
 
 ```sh
-git clone --depth 1 -b v2 https://github.com/Dodeun/doden-contract ~/.doden-contract
+git clone --depth 1 -b v3 https://github.com/Dodeun/doden-contract ~/.doden-contract
 python3 ~/.doden-contract/check.py .
 ```
 
@@ -112,17 +112,20 @@ python3 -m unittest discover -s tests
 
 ## Releasing
 
-Versions are pinned by a **moving major tag**. A Project pins `@v2` and picks
+Versions are pinned by a **moving major tag**. A Project pins `@v3` and picks
 up fixes without doing anything.
 
-**`v1` is frozen.** It points at `v1.0.1`, where ticket `14` left it, and it
-will not move again. A Project still pinned at `@v1` keeps passing the rules
-it was written against, and the tier-2 `contract-version` rule is what tells
-it that it is behind — weekly, in a report. That is the whole reason a major
+**`v1` and `v2` are frozen.** `v1` points at `v1.0.1`, where ticket `14` left
+it. `v2` points at `v2.0.0`, commit `39b9a29`, where it stood when `v3` was
+built by ticket `26`. Neither will move again. A Project still pinned at an
+older major keeps passing the rules it was written against, and the tier-2
+`contract-version` rule is what tells it that it is behind — weekly, in a
+report. That is the whole reason a major
 tag stops moving once a newer major exists: `v2` deletes the `oauth` Add-on
 and changes the shape of `addons`, and publishing either of those under a tag
 somebody already pins would turn a live Project red on a morning nobody
-chose. The tag that moves is only ever the newest one.
+chose. `v3` did the same to `seedCommand`, which moved into the database
+Add-on beside a new `migrate`. The tag that moves is only ever the newest one.
 
 You edit three files and merge them; `./release.sh` does the rest.
 

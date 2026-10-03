@@ -9,9 +9,11 @@ that yields nothing passed. Rules never raise for a condition they are meant
 to judge: a missing file is a violation, not a crash.
 """
 
+import re
 from dataclasses import dataclass
 
 from . import compose
+from .project import CONTRACT_DOC
 
 # Unset, these two produce a Stack that is silently somebody else's: an empty
 # Compose project name with Traefik routers called "-api", or an image
@@ -26,7 +28,7 @@ REQUIRE_ERROR_FORM = ("PROJECT_SLUG", "IMAGE_TAG")
 # it.** The Manifest's `provider` is a string of the right shape; which
 # strings the platform can honour is policy, it changes when an ADR changes,
 # and it belongs where it can be *reported* - in the same verdict as the
-# other sixteen rules, naming what is supported. An enum in the schema would
+# other eighteen rules, naming what is supported. An enum in the schema would
 # refuse the same Manifest one layer earlier, as `manifest`, with a message
 # about a failed assertion and no way for the `addon-provider` rule ever to
 # fire - a rule whose failing case cannot be constructed is a rule that has
@@ -40,6 +42,20 @@ DATABASE_URL = "DATABASE_URL"
 
 # The one-way channel a Project keeps open to the platform it runs on.
 FINDINGS_DOC = "PLATFORM-FINDINGS.md"
+
+# What points an agent at it: the instruction file most agents read, which
+# has to name the findings file and the contract it is written against.
+AGENTS_DOC = "AGENTS.md"
+
+# The files Claude Code reads *instead of* AGENTS.md, each with the import
+# that names AGENTS.md from where it stands - an import resolves from the file
+# that writes it, so `.claude/CLAUDE.md` writing `@AGENTS.md` names a file in
+# `.claude/` that does not exist. CLAUDE.local.md silences AGENTS.md the same
+# way, and is not here because it is never committed: nothing can check it.
+CLAUDE_DOCS = (("CLAUDE.md", "AGENTS.md"), (".claude/CLAUDE.md", "../AGENTS.md"))
+
+# The commands an Add-on carries, each run in a Service the Manifest names.
+COMMANDS = {"database": ("migrate", "seed")}
 
 
 @dataclass(frozen=True)
@@ -198,6 +214,94 @@ def platform_findings(project):
             "absent, because then there is nowhere for the next person to "
             "look and nothing to say that there should have been.",
         )
+
+
+@rule(
+    "findings-channel",
+    AGENTS_DOC + " points an agent at the contract and the findings file",
+)
+def findings_channel(project):
+    """A findings file nothing points at is a channel nobody writes to.
+
+    Ticket 24 found every Project carrying PLATFORM-FINDINGS.md and nothing an
+    agent reads telling it the file was there. AGENTS.md is the instruction
+    file most coding agents read, so it has to exist and name both files.
+
+    Then the one arrangement in which it is silenced: Claude Code reads a
+    CLAUDE.md *instead of* AGENTS.md, unless the CLAUDE.md imports it. The
+    import is required rather than a symlink, because a symlink checks out on
+    Windows as a one-line text file. An import written inside backticks or a
+    code block is a mention, which Claude Code does not follow, so neither
+    counts here.
+    """
+    agents = project.text(AGENTS_DOC)
+    if agents is None:
+        yield Violation(
+            "findings-channel",
+            AGENTS_DOC + " is missing. It is the instruction file most coding "
+            "agents read when they open a repository, and it is how an agent "
+            "working here learns that " + CONTRACT_DOC + " judges this "
+            "Project and that " + FINDINGS_DOC + " is where what it learns "
+            "about the contract goes. Without it the findings file exists and "
+            "nothing points at it.",
+        )
+    else:
+        for named in (CONTRACT_DOC, FINDINGS_DOC):
+            if named not in agents:
+                yield Violation(
+                    "findings-channel",
+                    AGENTS_DOC + " never names " + named + ". It is what an "
+                    "agent working here reads first, so a file it does not "
+                    "mention is a file that agent does not know exists.",
+                )
+
+    for name, target in CLAUDE_DOCS:
+        text = project.text(name)
+        if text is None or _imports(text, target):
+            continue
+        yield Violation(
+            "findings-channel",
+            name + " does not import " + AGENTS_DOC + ". Claude Code reads a "
+            "CLAUDE.md instead of " + AGENTS_DOC + " rather than beside it, so "
+            "everything " + AGENTS_DOC + " says stops reaching it, silently. "
+            "Add a line reading @" + target + " to " + name + ", outside "
+            "backticks and code blocks - an import resolves from the file "
+            "that writes it.",
+        )
+
+
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_CODE_SPAN = re.compile(r"(`+).*?\1")
+
+
+def _imports(text, target):
+    """Whether a CLAUDE.md imports `target`, the way Claude Code reads one.
+
+    Claude Code skips code spans and fenced code blocks when it looks for
+    `@path`, so they are removed here before looking. A fence closes only on
+    the character that opened it, repeated at least as often, as CommonMark
+    has it - so a ``` line inside a ~~~~ block does not end the block.
+
+    The import has to stand as a word of its own: `@AGENTS.md.` at the end of
+    a sentence is refused, because nothing says Claude Code reads the full
+    stop as anything but part of the path. The message asks for a line of its
+    own, which is the form Anthropic's documentation shows.
+    """
+    wanted = re.compile(r"(?<!\S)@(?:\./)?" + re.escape(target) + r"(?!\S)")
+    fence = None
+    for line in text.splitlines():
+        marker = _FENCE.match(line)
+        if marker:
+            opened = marker.group(1)
+            if fence is None:
+                fence = opened
+                continue
+            if opened[0] == fence[0] and len(opened) >= len(fence):
+                fence = None
+                continue
+        if fence is None and wanted.search(_CODE_SPAN.sub("", line)):
+            return True
+    return False
 
 
 @rule("compose-file", "the production Stack renders from the Manifest alone")
@@ -473,10 +577,10 @@ def database_url(project):
     role for, reaching for a secret that is not in its Doppler project.
 
     **Any service, not a named one.** The contract names no language and no
-    service role - `backend` is the Profile's word, and a Project of another
+    service role - `backend` is one Profile's word, and a Project of another
     Profile may call it something else - so the question this asks is whether
     the Stack is handed the value, not which container gets it. Which one it
-    should be is the Profile's business.
+    should be is the Project's business.
 
     Read from the rendered file with the sentinel identity values, like every
     rule that can be: a service that takes the value from the deploying
@@ -514,6 +618,45 @@ def database_url(project):
                 "a role, a database or that secret for this Project, so the "
                 "value is either absent or another Project's. Declare the "
                 "Add-on, or stop passing it.",
+            )
+
+
+@rule(
+    "addon-commands",
+    "every command an Add-on declares names a Service of the Stack",
+    needs_render=True,
+)
+def addon_commands(project):
+    """A Service name in the Manifest is a reference, so it is checked as one.
+
+    The database Add-on's `migrate` and `seed` each name the Service whose
+    image runs them, because the contract names no Service and no language:
+    which container holds the migration tool is the Project's choice. A typo
+    there would otherwise surface halfway through a deploy, after the images
+    were pulled - here it fails on the pull request.
+
+    Read from the rendered Stack, like every rule that can be: a Service
+    that exists only once a variable is set is not one the deploy can count
+    on.
+    """
+    addons = project.addons
+    if addons is None:
+        return  # the Manifest rule already said so
+
+    services = [name for name, _ in project.services]
+    for addon in sorted(addons):
+        for key in COMMANDS.get(addon, ()):
+            service = project.command(addon, key)["service"]
+            if service in services:
+                continue
+            yield Violation(
+                "addon-commands",
+                'the "' + addon + '" Add-on runs its ' + key + " command in "
+                'the Service "' + service + '", and docker-compose.prod.yml '
+                "has no Service of that name. It has: "
+                + (", ".join(services) or "none") + ". The command runs in a "
+                "one-off container of that Service's image, so the deploy "
+                "would have found this out after pulling the release.",
             )
 
 

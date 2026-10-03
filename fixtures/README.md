@@ -5,8 +5,9 @@ A rule with no failing example is a rule that has never run.
 `base/` is a conforming Project with the database Add-on — two services, both
 routed, one of them on `data`, one of them handed `DATABASE_URL`. It is
 deliberately the smallest Stack that still gives every tier-1 rule something
-to judge, plus the two files a Project has to carry: `CONTRACT.md`, copied in
-by the harness, and `PLATFORM-FINDINGS.md`.
+to judge, plus the three files a Project has to carry: `CONTRACT.md`, copied
+in by the harness, `PLATFORM-FINDINGS.md`, and the `AGENTS.md` that names
+both.
 
 Everything under `pass/` and `fail/` is an **overlay** on it: only the files
 that differ. The harness copies `base/` into a temporary directory, copies
@@ -43,6 +44,12 @@ Some fixtures exist to demonstrate something beyond their own rule:
 | `fail/healthcheck-disabled` | `disable: true` reads as configuration rather than as removal, which is what makes it the realistic evasion. |
 | `fail/network-data-missing` | The Add-on declared and the network absent. The `networks` rule reads both ways, so it needs a fixture in both. |
 | `fail/database-url-missing` and `fail/database-url-undeclared` | The same pair for the other half of the Add-on. An Add-on that can be half-applied is an Add-on whose declaration is decorative. |
+| `fail/manifest-v2-shape` | The same for `v2`: a top-level `seedCommand`, which moved into the database Add-on with a Service to run in and a new `migrate` beside it. Recognised by that key, and answered with the new shape instead of "not a field of the Manifest". |
+| `fail/addon-command-service-missing` | A `migrate` naming a Service the Stack does not have. The deploy would find out after pulling the release; this finds out on the pull request. |
+| `fail/findings-channel-import-in-a-code-span` | A `CLAUDE.md` that mentions `@AGENTS.md` in backticks. Claude Code does not follow a mention, so the rule does not count one. |
+| `fail/findings-channel-import-in-a-fenced-block` | An import inside a block fenced with `~~~~`, with a ` ``` ` line in it. A fence closes only on its own character, as CommonMark has it, so the import is still example text. |
+| `fail/findings-channel-dot-claude-wrong-path` | `.claude/CLAUDE.md` writing `@AGENTS.md`, which resolves to `.claude/AGENTS.md`: an import is relative to the file that writes it. Its pair is `pass/dot-claude-imports-agents`. |
+| `pass/base-dockerfile-profile` | The Profile that names no language. Nothing else in the contract may need one. |
 | `fail/manifest-addons-v1-shape` | A Manifest written for the previous contract. The message is the point: it names both versions and shows the new shape, because the person reading it has not opened the ticket that changed it. |
 | `fail/manifest-oauth-addon` | The Add-on that was deleted rather than implemented. Its absence is the surprising part, so the message says why (ADR-0013) instead of reporting an unknown key. |
 | `fail/addon-provider` | An engine the platform does not run. Refused by a rule rather than by the schema, so that the list of what *is* run has one home and can be reported beside every other verdict. |

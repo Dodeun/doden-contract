@@ -79,11 +79,20 @@
     "appName": "Example Project",
     "appHost": "example.doden.dev",
     "profile": "node-web",
-    "addons": [
-      "database"
-    ],
-    "contractVersion": "v1",
-    "seedCommand": "npm run seed --workspace=backend"
+    "addons": {
+      "database": {
+        "provider": "postgresql",
+        "migrate": {
+          "service": "backend",
+          "command": "npx prisma migrate deploy --schema backend/prisma/schema.prisma"
+        },
+        "seed": {
+          "service": "backend",
+          "command": "npm run seed --workspace=backend"
+        }
+      }
+    },
+    "contractVersion": "v3"
   },
   "manifest_error": null,
   "contract_document": "the canonical CONTRACT.md\n",

@@ -1,9 +1,15 @@
 # The `database` Add-on
 
-Contract version: `v2`
+Contract version: `v3`
 
 ```json
-"addons": { "database": { "provider": "postgresql" } }
+"addons": {
+  "database": {
+    "provider": "postgresql",
+    "migrate": { "service": "app", "command": "./migrate up" },
+    "seed": { "service": "app", "command": "./seed --synthetic" }
+  }
+}
 ```
 
 This document is canonical in
@@ -60,17 +66,27 @@ connects to nothing; passed and not declared is a Project nobody created a
 role for. The same is true of the `data` network, which the `networks` rule
 checks in both directions for the same reason.
 
-**`seedCommand`, in the Manifest, and it has to work.** It is what fills an
-empty database with **synthetic** data for a Preview. Never a copy of
-production: that is what keeps a Preview and the people testing it outside
-production's Trust Domain. Your Profile runs it on every CI run rather than
-the first time a Preview needs it, because a declared command nobody has run
-is a Manifest field that is false.
+**Two commands, in this Add-on, and they have to work.** `migrate` and
+`seed`, each a `{ service, command }`: the Service of your production Stack
+whose image runs it, and what to run. The platform runs each as
+`sh -c '<command>'` in place of that image's entrypoint, in a one-off
+container with `DATABASE_URL` in its environment — `CONTRACT.md`, "How the
+commands are run", says why a shell. The `addon-commands` rule checks that
+both Services exist. Your Profile runs both on every CI run, against a
+throwaway database, rather than the first time a deploy or a Preview needs
+them, because a declared command nobody has run is a Manifest field that is
+false. They are yours: whoever changes how the schema is migrated changes the
+command in the same pull request.
+
+**`seed` fills an empty database with synthetic data**, for a Preview. Never
+a copy of production: that is what keeps a Preview and the people testing it
+outside production's Trust Domain.
 
 **Migrations applied forward, by the deploy, before the new images serve.**
-The Profile supplies the command — `prisma migrate deploy` in `node-web` —
-and the shape is the contract's: forward only. There is no down-migration in
-this platform and a Rollback does not run one.
+The Manifest declares the command, as `migrate`, and the deploy runs it in
+the image of the Release being deployed; a failure leaves the previous
+Release serving. The shape is the contract's: forward only. There is no
+down-migration in this platform and a Rollback does not run one.
 
 That makes **expand/contract** an obligation on the migration rather than a
 step in the rollback. Add the column, write both, backfill, and drop the old
@@ -96,8 +112,8 @@ nobody runs is asking somebody to run it.
 
 ## If you remove it
 
-Take out the Manifest key, the `data` network, the `DATABASE_URL`, the seed
-command and this file. The role, the database and the secret are the
+Take out the Manifest key — the two commands go with it — the `data`
+network, the `DATABASE_URL` and this file. The role, the database and the secret are the
 platform's to remove, and `project delete` is where that lives — but the
 dumps already taken stay in the backup bucket, because the backup key holds
 no `deleteFiles` on purpose.
