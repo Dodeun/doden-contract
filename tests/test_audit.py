@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "audit" / "fixtures"
 CANONICAL_DOCUMENT = "the canonical CONTRACT.md\n"
 CANONICAL_ADDON_DOCUMENT = "the canonical database Add-on document\n"
-STUB_VERSION = "v1.0.0"
+STUB_VERSION = "v3.0.0"
 
 
 def install() -> Path:

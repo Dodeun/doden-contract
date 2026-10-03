@@ -373,8 +373,8 @@ def _declared_addons(manifest) -> set:
 
     The audit runs over Projects pinned at different majors at the same time -
     that is what the `contract-version` rule is for - so it reads `v1`'s array
-    of names and `v2`'s object of names and configuration. Nothing here judges
-    which shape it found: a Project on an older major has a version to move,
+    of names and the object of names and configuration every later major
+    uses. Nothing here judges which shape it found: a Project on an older major has a version to move,
     and the rule above is what says so.
     """
     addons = (manifest or {}).get("addons")

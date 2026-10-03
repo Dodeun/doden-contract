@@ -20,6 +20,16 @@ CONTRACT_DOC = "CONTRACT.md"
 # The one machine-readable line in an otherwise prose document.
 PINNED_VERSION = re.compile(r"^Contract version:\s*`?(v[0-9]+)`?\s*$", re.M)
 
+# What `addons` looks like now, quoted by every message about an older shape.
+# One copy, so the v1 message and the v2 message cannot show two shapes.
+CURRENT_ADDONS = (
+    '"addons": { "database": { "provider": "postgresql", '
+    '"migrate": { "service": "<a Service of docker-compose.prod.yml>", '
+    '"command": "<brings the schema forward>" }, '
+    '"seed": { "service": "<a Service>", '
+    '"command": "<writes synthetic data>" } } }'
+)
+
 
 class Project:
     def __init__(self, tree, contract_root, version):
@@ -175,9 +185,14 @@ class Project:
         it says which version this Manifest is, which one is running, and what
         the new shape looks like, and it says it *instead of* the schema's
         complaints rather than beside them, because the ones the shape
-        causes drown the message explaining it: a `v1` Manifest also has no
-        seed command under the new conditional, and reporting that would send
-        somebody to add a field they already have.
+        causes drown the message explaining it: a `v1` Manifest also carries a
+        top-level `seedCommand` that `v3` moved into the Add-on, and reporting
+        an unknown field would send somebody to delete a command they need.
+
+        `v2` gets the same treatment for the same reason. Its shape differs
+        from `v3` by `seedCommand` alone - moved into the database Add-on,
+        beside a `migrate` that used to be the Profile's - so that key is how
+        a `v2` Manifest is recognised.
 
         The cost is that a `v1` Manifest with an *unrelated* fault - a missing
         slug, a typo'd host - is told about the shape first and about the
@@ -192,8 +207,8 @@ class Project:
                 "contract v1 used. The checker running is "
                 + self.contract_major + ", where addons is an object whose "
                 "keys are the Add-ons and whose values carry that Add-on's "
-                'configuration: "addons": { "database": { "provider": '
-                '"postgresql" } }. A Project with no Add-ons writes {}. '
+                "configuration, the database's commands included: "
+                + CURRENT_ADDONS + ". A Project with no Add-ons writes {}. "
                 "There is no `oauth` Add-on any more and nothing replaced it - "
                 "a login is the Project's own code (ADR-0013) - so it comes "
                 "out of the Manifest and stays in the application. Move this "
@@ -209,6 +224,21 @@ class Project:
                 "login is the Project's own code however much of it there is "
                 "(ADR-0013). Remove the key; nothing else about the Project's "
                 "login changes."
+            ]
+        if "seedCommand" in data:
+            return [
+                MANIFEST + ' carries a top-level "seedCommand", which is the '
+                "shape contract v2 used. The checker running is "
+                + self.contract_major + ", where the database Add-on carries "
+                "its own commands, each naming the Service whose image runs "
+                "it: " + CURRENT_ADDONS + ". The seed command moves there "
+                "unchanged. The migrate command is new to the Manifest: under "
+                "v2 it was the Profile's, written into the deploy script, so "
+                "copy it from there. Both are run as sh -c in a one-off "
+                "container of the named Service's image - CONTRACT.md says "
+                "how. Move this Project by changing the Manifest, CONTRACT.md "
+                "and the tag its workflow calls together, or keep it on v2 by "
+                "pinning the workflow at @v2, which no longer moves."
             ]
         return []
 

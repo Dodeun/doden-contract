@@ -126,6 +126,9 @@ class ConformingProjects(FixtureCase):
     def test_a_project_without_the_database_addon_passes(self):
         self.assertPasses("pass/no-database")
 
+    def test_a_profile_that_names_no_language_passes(self):
+        self.assertPasses("pass/base-dockerfile-profile")
+
 
 class Manifest(FixtureCase):
     def test_a_project_with_no_manifest_is_refused(self):
@@ -141,7 +144,10 @@ class Manifest(FixtureCase):
         self.assertFails("fail/manifest-missing-field", "manifest", names="appHost")
 
     def test_the_database_addon_must_declare_a_seed_command(self):
-        self.assertFails("fail/manifest-no-seed-command", "manifest", names="seedCommand")
+        self.assertFails("fail/manifest-no-seed", "manifest", names='"seed"')
+
+    def test_the_database_addon_must_declare_a_migrate_command(self):
+        self.assertFails("fail/manifest-no-migrate", "manifest", names='"migrate"')
 
     def test_an_unknown_field_is_refused(self):
         self.assertFails("fail/manifest-unknown-field", "manifest", names="apphost")
@@ -158,8 +164,26 @@ class Manifest(FixtureCase):
             ["manifest"], sorted({v["rule"] for v in result["violations"]})
         )
         message = " ".join(v["message"] for v in result["violations"])
-        for names in ("v1", "v2", '"provider": "postgresql"', "@v1"):
+        for names in ("v1", "v3", '"provider": "postgresql"', '"migrate"', "@v1"):
             self.assertIn(names, message)
+
+    def test_a_v2_shaped_manifest_is_refused_in_the_versions_own_terms(self):
+        """The same message, one version later.
+
+        `seedCommand` moved into the database Add-on and gained a Service. A
+        Project still on v2 meets this the day it repins, so the message
+        names both versions, shows where the command went, and says how to
+        stay behind - instead of the schema's "not a field of the Manifest".
+        """
+        result = self.verdict("fail/manifest-v2-shape")
+        self.assertEqual(
+            ["manifest"], sorted({v["rule"] for v in result["violations"]})
+        )
+        message = " ".join(v["message"] for v in result["violations"])
+        for names in ("seedCommand", "v2", "v3", '"migrate"', '"seed"',
+                      '"service"', "@v2"):
+            self.assertIn(names, message)
+        self.assertNotIn("not a field of the Manifest", message)
 
     def test_the_oauth_addon_is_gone_and_the_message_says_why(self):
         self.assertFails(
@@ -190,6 +214,12 @@ class Addons(FixtureCase):
             "fail/database-url-undeclared", "database-url", names="backend",
         )
 
+    def test_a_command_naming_a_service_the_stack_lacks_is_refused(self):
+        """A typo in the Manifest fails here, not halfway through a deploy."""
+        self.assertFails(
+            "fail/addon-command-service-missing", "addon-commands", names="api",
+        )
+
 
 class TheChannelBackToThePlatform(FixtureCase):
     def test_a_project_carrying_no_findings_file_is_refused(self):
@@ -206,6 +236,58 @@ class TheChannelBackToThePlatform(FixtureCase):
         that ever forgets the file.
         """
         result = self.verdict("fail/platform-findings-missing")
+        message = " ".join(v["message"] for v in result["violations"])
+        for address in ("ai-archi-brainstorm", "Dodeun/", "doden-contract"):
+            self.assertNotIn(address, message)
+
+
+class TheChannelIsSignposted(FixtureCase):
+    """The file existing is not enough: something an agent reads must name it.
+
+    Ticket 24 found every Project carrying PLATFORM-FINDINGS.md and nothing
+    that told an agent working there to write in it. AGENTS.md is the file
+    most agents read; a CLAUDE.md beside it silences it for Claude Code
+    unless it imports it.
+    """
+
+    def test_a_project_with_no_agents_file_is_refused(self):
+        self.assertFails(
+            "fail/findings-channel-no-agents", "findings-channel",
+            names="AGENTS.md",
+        )
+
+    def test_an_agents_file_that_never_names_the_findings_file_is_refused(self):
+        self.assertFails(
+            "fail/findings-channel-findings-unnamed", "findings-channel",
+            names="PLATFORM-FINDINGS.md",
+        )
+
+    def test_a_claude_file_that_does_not_import_the_agents_file_is_refused(self):
+        self.assertFails(
+            "fail/findings-channel-claude-without-import", "findings-channel",
+            names="@AGENTS.md",
+        )
+
+    def test_an_import_written_in_backticks_is_a_mention_and_is_refused(self):
+        self.assertFails(
+            "fail/findings-channel-import-in-a-code-span", "findings-channel",
+            names="CLAUDE.md",
+        )
+
+    def test_an_import_resolves_from_the_file_that_writes_it(self):
+        self.assertFails(
+            "fail/findings-channel-dot-claude-wrong-path", "findings-channel",
+            names="@../AGENTS.md",
+        )
+
+    def test_a_claude_file_importing_the_agents_file_passes(self):
+        self.assertPasses("pass/claude-imports-agents")
+
+    def test_a_claude_file_under_dot_claude_importing_it_passes(self):
+        self.assertPasses("pass/dot-claude-imports-agents")
+
+    def test_the_message_does_not_say_where_the_findings_go(self):
+        result = self.verdict("fail/findings-channel-no-agents")
         message = " ".join(v["message"] for v in result["violations"])
         for address in ("ai-archi-brainstorm", "Dodeun/", "doden-contract"):
             self.assertNotIn(address, message)

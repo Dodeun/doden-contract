@@ -1,15 +1,22 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Dodeun/doden-contract/v2/platform.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Dodeun/doden-contract/v3/platform.schema.json",
   "slug": "fixture-base",
   "appName": "Fixture Base",
   "appHost": "fixture-base.example.test",
   "profile": "node-web",
   "addons": {
     "database": {
-      "provider": "postgresql"
+      "provider": "postgresql",
+      "migrate": {
+        "service": "backend",
+        "command": "npm run migrate --workspace=backend"
+      },
+      "seed": {
+        "service": "backend",
+        "command": "npm run seed --workspace=backend"
+      }
     },
     "oauth": {}
   },
-  "contractVersion": "v2",
-  "seedCommand": "npm run seed --workspace=backend"
+  "contractVersion": "v3"
 }
