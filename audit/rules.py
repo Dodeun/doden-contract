@@ -35,6 +35,10 @@ REQUIRED_CONTEXTS = ("test", "contract / tier-1")
 # rewritten or removed instead.
 BRANCH_RULES = ("pull_request", "deletion", "non_fast_forward")
 
+# Every rule type the contract needs GitHub to *apply* to the default branch:
+# the three above, and the one that makes the checks refuse a merge.
+APPLIED_BRANCH_RULES = BRANCH_RULES + ("required_status_checks",)
+
 # The rules a release tag has to be under, and the first one is the one that
 # does the work. Measured on 2026-09-18 against a throwaway repository: with
 # `deletion` and `non_fast_forward` alone, a `v*` tag can still be moved
@@ -377,16 +381,22 @@ def rules_apply(settings, platform):
     )
     declared = _enforced(declaring)
     applied = {r.get("type") for r in settings.applied_branch_rules}
-    required = BRANCH_RULES + ("required_status_checks",)
-    lost = [name for name in required if name in declared and name not in applied]
+    lost = [
+        name
+        for name in APPLIED_BRANCH_RULES
+        if name in declared and name not in applied
+    ]
     if not lost:
         return
-    names = ", ".join(f"`{rs.get('name', '?')}`" for rs in declaring)
+    # Only the rulesets that declare something lost: naming one that GitHub
+    # still applies in full would send somebody to look at the wrong thing.
+    culprits = [rs for rs in declaring if _enforced([rs]) & set(lost)]
+    names = ", ".join(f"`{rs.get('name', '?')}`" for rs in culprits)
     yield Finding(
         "rules-apply",
         f"GitHub no longer applies {', '.join(f'`{n}`' for n in lost)} to "
         f"{settings.default_branch}, although {names} declare"
-        f"{'s' if len(declaring) == 1 else ''} "
+        f"{'s' if len(culprits) == 1 else ''} "
         f"{'it' if len(lost) == 1 else 'them'} and say `active`. This is what "
         "a lapsed GitHub Pro is expected to look like on a private "
         "repository: the rulesets stay listed and refuse nothing. GitHub "

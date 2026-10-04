@@ -99,10 +99,10 @@ def _get(path: str, token: str, raw: bool = False):
         detail = exc.read().decode("utf-8", "replace")[:200]
         # 403 is "this token may not read that", which two callers - the
         # variables and the applied rules - are allowed to treat as an
-        # unanswered question. Everything else - an
-        # expired token, a rate limit, a bad gateway - is the audit being
-        # unable to run, and is raised as such so that no rule can mistake it
-        # for a setting that is absent.
+        # unanswered question. Everything else - an expired token, a rate
+        # limit, a bad gateway - is the audit being unable to run, and is
+        # raised as such so that no rule can mistake it for a setting that is
+        # absent.
         error = NotPermitted if exc.code == 403 else AuditError
         raise error(f"GET {path} answered {exc.code}: {detail.strip()}") from exc
     except urllib.error.URLError as exc:
@@ -158,13 +158,33 @@ def fetch(repository: str, token: str) -> Settings:
     # phase 4). There is no such endpoint for a tag: read 2026-10-04 in the
     # REST reference, and `rules/tags/...` answers 404.
     #
-    # A 404 here is not "nothing applies": it is left as an unanswered
-    # question, like a 403, and the rule reading it reports *not checked*.
+    # **Any refusal here is the audit failing, never a question left open.**
+    # Unlike the variables, this endpoint needs only Metadata: read, which
+    # every fine-grained token carries, so a 403 or a 404 is not a missing
+    # permission - and it may be exactly how a lapsed plan answers. Reported
+    # as *not checked*, it would leave the run green on the day this rule
+    # exists for. Raised, it is exit 2, which Discord hears about.
+    #
+    # One page of 100, like the variables: the platform's rulesets apply four
+    # rules, and the endpoint's default page is 30.
+    path = f"/repos/{repository}/rules/branches/{default_branch}?per_page=100"
     try:
-        applied = _get(f"/repos/{repository}/rules/branches/{default_branch}", token)
-    except NotPermitted:
-        applied = None
-    applied_branch_rules = applied if isinstance(applied, list) else None
+        applied = _get(path, token)
+    except NotPermitted as exc:
+        raise AuditError(
+            f"{repository}: GitHub refused to say which rules apply to "
+            f"{default_branch} ({exc}). The token needs nothing beyond "
+            "Metadata: read for this, so look at the account's plan as well "
+            "as the token."
+        ) from exc
+    if not isinstance(applied, list):
+        raise AuditError(
+            f"{repository}: GET {path} answered "
+            + ("404" if applied is None else "something other than a list")
+            + ", so which rules GitHub applies is unknown. It is not reported "
+            "as conforming."
+        )
+    applied_branch_rules = applied
 
     manifest = None
     manifest_error = None

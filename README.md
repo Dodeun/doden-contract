@@ -245,7 +245,9 @@ applies. Rulesets on a private repository need GitHub Pro, and a lapsed plan
 is expected to leave them listed, marked `active`, and refusing nothing: every
 other rule would go on passing. GitHub has no such endpoint for a tag (read
 2026-10-04), so the default branch stands in for the release tags too, and
-the finding says so. It compares types only, never parameters, so it asks
+the finding says so. If GitHub will not answer that read — a 403 or a 404 —
+the audit exits **2** rather than calling the rule unchecked: the read needs
+only `Metadata: read`, so a refusal may be the lapse itself. It compares types only, never parameters, so it asks
 for no approvals. It is a tier-2 rule and no Project's files change, so it
 shipped as a minor release and `CONTRACT.md` was left as it is: changing that
 copy would have reported every Project's copy as drifted, for a rule no

@@ -280,7 +280,9 @@ class WhatGitHubApplies(AuditTestCase):
         overlay = json.loads(
             (FIXTURES / "fail" / "rules-apply-partial.json").read_text(encoding="utf-8")
         )
-        _, findings = self.findings(overlay)
+        status, findings = self.findings(overlay)
+        self.assertEqual(1, status)
+        self.assertEqual(1, len(findings), findings)
         message = findings[0]["message"]
         self.assertIn("`pull_request`", message)
         self.assertNotIn("`deletion`", message)
@@ -455,6 +457,7 @@ class ReadingSettingsOffGitHub(unittest.TestCase):
     REPOSITORY = {
         "/repos/Dodeun/example-project": {"default_branch": "main"},
         "/repos/Dodeun/example-project/rulesets": [],
+        "/repos/Dodeun/example-project/rules/branches/main": [],
         "/repos/Dodeun/example-project/contents": None,
     }
 
@@ -519,25 +522,37 @@ class ReadingSettingsOffGitHub(unittest.TestCase):
         )
         self.assertEqual(applied, got.applied_branch_rules)
 
-    def test_applied_rules_the_token_may_not_read_leave_the_question_open(self):
-        got = self.fetch_with(
-            self.responses(
-                **dict(
-                    self.REPOSITORY,
-                    **{
-                        "/repos/Dodeun/example-project/rules/branches/main":
-                            self.NotPermitted("403")
-                    },
+    def test_a_403_on_the_applied_rules_is_the_audit_failing(self):
+        """Not a question left open, as it is for the variables: this needs
+        only Metadata: read, so a refusal may be how a lapsed plan answers,
+        and *not checked* would leave the run green on that very day."""
+        with self.assertRaises(self.AuditError) as caught:
+            self.fetch_with(
+                self.responses(
+                    **dict(
+                        self.REPOSITORY,
+                        **{
+                            "/repos/Dodeun/example-project/rules/branches/main":
+                                self.NotPermitted("403")
+                        },
+                    )
                 )
             )
-        )
-        self.assertIsNone(got.applied_branch_rules)
+        self.assertNotIsInstance(caught.exception, self.NotPermitted)
+        self.assertIn("plan", str(caught.exception))
 
-    def test_a_404_on_the_applied_rules_is_not_nothing_applied(self):
-        """`[]` is the lapsed-Pro verdict. A request that found nothing must
-        not be able to say it."""
-        got = self.fetch_with(self.responses(**self.REPOSITORY))
-        self.assertIsNone(got.applied_branch_rules)
+    def test_a_404_on_the_applied_rules_is_the_audit_failing(self):
+        """`[]` is the lapsed-Pro verdict, and a request that found nothing
+        must not be able to say it - nor to say *not checked*."""
+        with self.assertRaises(self.AuditError):
+            self.fetch_with(
+                self.responses(
+                    **dict(
+                        self.REPOSITORY,
+                        **{"/repos/Dodeun/example-project/rules/branches/main": None},
+                    )
+                )
+            )
 
     def test_a_rate_limit_on_the_applied_rules_is_the_audit_failing(self):
         with self.assertRaises(self.AuditError):
