@@ -48,6 +48,10 @@ class Settings:
     contract_document: str | None = None
     addon_documents: dict = field(default_factory=dict)
     variables: list | None = None
+    # What GitHub says it *applies* to the default branch, as opposed to what
+    # the rulesets declare. `None` is a question nobody answered, the same as
+    # `variables`; `[]` is GitHub applying nothing at all.
+    applied_branch_rules: list | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Settings":
@@ -93,8 +97,9 @@ def _get(path: str, token: str, raw: bool = False):
         if exc.code == 404:
             return None
         detail = exc.read().decode("utf-8", "replace")[:200]
-        # 403 is "this token may not read that", which exactly one caller is
-        # allowed to treat as an unanswered question. Everything else - an
+        # 403 is "this token may not read that", which two callers - the
+        # variables and the applied rules - are allowed to treat as an
+        # unanswered question. Everything else - an
         # expired token, a rate limit, a bad gateway - is the audit being
         # unable to run, and is raised as such so that no rule can mistake it
         # for a setting that is absent.
@@ -144,6 +149,22 @@ def fetch(repository: str, token: str) -> Settings:
         full = _get(f"/repos/{repository}/rulesets/{summary['id']}", token)
         if full is not None:
             rulesets.append(full)
+
+    # The rules GitHub applies to the default branch, from every active
+    # ruleset whatever level it was configured at, and from none in
+    # `evaluate` or `disabled`. A ruleset can say `active` and produce
+    # nothing here - which is what a private repository's rulesets are
+    # expected to do when the account's GitHub Pro lapses (decision 31 of
+    # phase 4). There is no such endpoint for a tag: read 2026-10-04 in the
+    # REST reference, and `rules/tags/...` answers 404.
+    #
+    # A 404 here is not "nothing applies": it is left as an unanswered
+    # question, like a 403, and the rule reading it reports *not checked*.
+    try:
+        applied = _get(f"/repos/{repository}/rules/branches/{default_branch}", token)
+    except NotPermitted:
+        applied = None
+    applied_branch_rules = applied if isinstance(applied, list) else None
 
     manifest = None
     manifest_error = None
@@ -204,4 +225,5 @@ def fetch(repository: str, token: str) -> Settings:
         contract_document=document,
         addon_documents=addon_documents,
         variables=variables,
+        applied_branch_rules=applied_branch_rules,
     )

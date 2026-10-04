@@ -1,0 +1,11 @@
+{
+  "fires": ["rules-apply"],
+  "why": "A ruleset that declares a rule GitHub does not apply. The finding has to name the rule that no longer applies, not merely say that something is wrong.",
+  "settings": {
+    "applied_branch_rules": [
+      { "type": "deletion", "ruleset_source_type": "Repository", "ruleset_source": "Dodeun/example-project", "ruleset_id": 1 },
+      { "type": "non_fast_forward", "ruleset_source_type": "Repository", "ruleset_source": "Dodeun/example-project", "ruleset_id": 1 },
+      { "type": "required_status_checks", "ruleset_source_type": "Repository", "ruleset_source": "Dodeun/example-project", "ruleset_id": 1 }
+    ]
+  }
+}

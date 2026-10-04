@@ -249,6 +249,99 @@ class NotCheckedIsNotPassed(AuditTestCase):
         self.assertIn("not that it passed", proc.stdout)
 
 
+class WhatGitHubApplies(AuditTestCase):
+    """The rulesets say `active`; GitHub is what says whether they apply.
+
+    Decision 31 of phase 4: the production rulesets rest on a free GitHub Pro
+    that will lapse, and the likeliest failure is a ruleset still listed as
+    `active` that refuses nothing.
+    """
+
+    def findings(self, overlay):
+        result, status = self.audit(merge(overlay))
+        return status, [
+            f for f in result["projects"][0]["findings"] if f["rule"] == "rules-apply"
+        ]
+
+    def test_the_lapsed_case_names_everything_that_no_longer_applies(self):
+        overlay = json.loads(
+            (FIXTURES / "fail" / "rules-apply-lapsed.json").read_text(encoding="utf-8")
+        )
+        status, findings = self.findings(overlay)
+        self.assertEqual(1, status)
+        self.assertEqual(1, len(findings), findings)
+        message = findings[0]["message"]
+        for name in ("pull_request", "deletion", "non_fast_forward", "required_status_checks"):
+            self.assertIn(f"`{name}`", message)
+        self.assertIn("`protect-main`", message)
+        self.assertIn("tag", message)
+
+    def test_a_partial_loss_names_only_what_was_lost(self):
+        overlay = json.loads(
+            (FIXTURES / "fail" / "rules-apply-partial.json").read_text(encoding="utf-8")
+        )
+        _, findings = self.findings(overlay)
+        message = findings[0]["message"]
+        self.assertIn("`pull_request`", message)
+        self.assertNotIn("`deletion`", message)
+
+    def test_a_rule_the_rulesets_never_declared_is_not_reported_twice(self):
+        """Missing from the ruleset is `protect-main`'s finding, not this one's."""
+        status, findings = self.findings(
+            {
+                "rulesets": {
+                    "protect-main": {
+                        "rules": [
+                            {"type": "deletion"},
+                            {"type": "non_fast_forward"},
+                            {
+                                "type": "required_status_checks",
+                                "parameters": {
+                                    "strict_required_status_checks_policy": True,
+                                    "required_status_checks": [
+                                        {"context": "test"},
+                                        {"context": "contract / tier-1"},
+                                    ],
+                                },
+                            },
+                        ]
+                    }
+                },
+                "settings": {
+                    "applied_branch_rules": [
+                        {"type": "deletion"},
+                        {"type": "non_fast_forward"},
+                        {"type": "required_status_checks"},
+                    ]
+                },
+            }
+        )
+        self.assertEqual(1, status)
+        self.assertEqual([], findings)
+
+    def test_rules_applied_from_any_source_count(self):
+        """Types are compared, never which ruleset produced them, so a rule
+        applied by an organisation ruleset - or recorded without its source -
+        is as applied as any other."""
+        status, findings = self.findings(
+            {
+                "settings": {
+                    "applied_branch_rules": [
+                        {"type": t}
+                        for t in (
+                            "deletion",
+                            "non_fast_forward",
+                            "pull_request",
+                            "required_status_checks",
+                        )
+                    ]
+                }
+            }
+        )
+        self.assertEqual(0, status)
+        self.assertEqual([], findings)
+
+
 class TheAuditFailingIsNotTheProjectFailing(AuditTestCase):
     """Exit 2 means "could not run", and must never read as exit 1 or 0."""
 
@@ -414,6 +507,52 @@ class ReadingSettingsOffGitHub(unittest.TestCase):
                 )
             )
 
+    def test_the_applied_rules_are_read_for_the_default_branch(self):
+        applied = [{"type": "deletion"}]
+        got = self.fetch_with(
+            self.responses(
+                **dict(
+                    self.REPOSITORY,
+                    **{"/repos/Dodeun/example-project/rules/branches/main": applied},
+                )
+            )
+        )
+        self.assertEqual(applied, got.applied_branch_rules)
+
+    def test_applied_rules_the_token_may_not_read_leave_the_question_open(self):
+        got = self.fetch_with(
+            self.responses(
+                **dict(
+                    self.REPOSITORY,
+                    **{
+                        "/repos/Dodeun/example-project/rules/branches/main":
+                            self.NotPermitted("403")
+                    },
+                )
+            )
+        )
+        self.assertIsNone(got.applied_branch_rules)
+
+    def test_a_404_on_the_applied_rules_is_not_nothing_applied(self):
+        """`[]` is the lapsed-Pro verdict. A request that found nothing must
+        not be able to say it."""
+        got = self.fetch_with(self.responses(**self.REPOSITORY))
+        self.assertIsNone(got.applied_branch_rules)
+
+    def test_a_rate_limit_on_the_applied_rules_is_the_audit_failing(self):
+        with self.assertRaises(self.AuditError):
+            self.fetch_with(
+                self.responses(
+                    **dict(
+                        self.REPOSITORY,
+                        **{
+                            "/repos/Dodeun/example-project/rules/branches/main":
+                                self.AuditError("429 rate limited")
+                        },
+                    )
+                )
+            )
+
     def test_a_repository_that_names_no_default_branch_is_an_error(self):
         with self.assertRaises(self.AuditError):
             self.fetch_with(
@@ -448,6 +587,15 @@ class TheDiscordMessage(AuditTestCase):
         self.assertIn("Dodeun/example-project", message)
         self.assertIn("protect-releases", message)
         self.assertIn("update", message)
+
+    def test_rules_that_stopped_applying_are_named_like_any_other(self):
+        overlay = json.loads(
+            (FIXTURES / "fail" / "rules-apply-lapsed.json").read_text(encoding="utf-8")
+        )
+        message = self.report.discord_message(self.verdict(overlay))
+        self.assertIn("Dodeun/example-project", message)
+        self.assertIn("**rules-apply**", message)
+        self.assertIn("lapsed GitHub Pro", message)
 
     def test_message_and_discord_cannot_be_asked_for_together(self):
         """`--message` promises to post nothing, and a promise a flag

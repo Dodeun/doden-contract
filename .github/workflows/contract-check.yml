@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: Dodeun/doden-contract
-          ref: v3.0.0
+          ref: v3.1.0
           path: contract
 
       # The same command a human runs, against the same file - not a
