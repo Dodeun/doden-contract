@@ -1,0 +1,7 @@
+{
+  "fires": ["app-sees-no-project"],
+  "why": "A Project in the installation can be administered and deleted by any agent holding the App (ADR-0012). Adding one takes the operator's own hand in the installation's settings, or a `project promote` that forgot to take the repository out.",
+  "settings": {
+    "repositories": ["Dodeun/doden-prototypes-placeholder", "Dodeun/example-project"]
+  }
+}

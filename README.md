@@ -89,6 +89,9 @@ does not exist.
 asserted against the *rendered* Compose file, because grepping the source
 passes a Stack whose `ports:` arrives through a variable.
 
+The tier-2 audit also calls `openssl`, to sign the Prototypes' App's JWT
+(below). It is a binary every runner already has, not a package to install.
+
 ## The fixtures
 
 `fixtures/base` is a conforming Project with the database Add-on. Everything
@@ -252,3 +255,32 @@ for no approvals. It is a tier-2 rule and no Project's files change, so it
 shipped as a minor release and `CONTRACT.md` was left as it is: changing that
 copy would have reported every Project's copy as drifted, for a rule no
 Project can act on.
+
+**The Prototypes' App** (since `v3.2.0`). The App of ADR-0012 can do
+anything to a Prototype, and promotion is one-way only while it can neither
+widen its own installation nor already hold a Project. Two rules judge the
+App, which is not a repository, and the report names it beside the Projects:
+
+- `app-cannot-widen` fails if the App's settings request, or its
+  installation holds, `installation_repositories` — the permission that lets
+  its own token add a repository to its installation.
+- `app-sees-no-project` fails if the installation is on *all* repositories,
+  or if any Project on the list is in it.
+
+The list names the App with three numbers that are not secrets:
+
+```json
+{ "projects": ["..."],
+  "app": { "slug": "doden-prototypes", "appId": 5188376, "installationId": 167903513 } }
+```
+
+and `APP_PRIVATE_KEY` holds one of the App's private keys. **Nothing short of
+the App's own key can read a private App**: on 2026-10-04 `GET /apps/{slug}`
+answered 404 with no token, with a fine-grained token and with the
+operator's, and both `/user/installations` reads answered 403. So the key is
+held, and used for as little as it can be: the JWT reads the App and its
+installation, and the one installation token minted to list the
+repositories may read metadata and nothing else, and is revoked as soon as
+the listing is done. A list naming the App with no key is exit **2**, never a
+skipped App. Recorded App settings are judged with `--app-settings`, beside
+`--settings`; the fixtures are in `audit/fixtures/app/`.

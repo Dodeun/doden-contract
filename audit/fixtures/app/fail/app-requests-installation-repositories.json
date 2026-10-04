@@ -1,0 +1,5 @@
+{
+  "fires": ["app-cannot-widen"],
+  "why": "The App's settings ask for the permission and the installation has not accepted it yet. Nothing holds it today; one click on the installation's review page and something does. Reported now, not on the Monday after the click.",
+  "settings": { "registered_permissions": { "installation_repositories": "write" } }
+}

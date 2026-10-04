@@ -37,8 +37,8 @@ sys.path.insert(0, str(HERE))
 
 from audit import AuditError  # noqa: E402
 from audit import report as reporting  # noqa: E402
-from audit.rules import RULES, Platform  # noqa: E402
-from audit.settings import Settings, fetch  # noqa: E402
+from audit.rules import APP_RULES, RULES, Platform  # noqa: E402
+from audit.settings import AppSettings, Settings, fetch, fetch_app  # noqa: E402
 
 
 def platform() -> Platform:
@@ -88,12 +88,40 @@ def audit_one(settings: Settings, against: Platform) -> dict:
     }
 
 
-def run(projects: list, against: Platform, token: str | None) -> dict:
+def audit_app(app: AppSettings, projects: list) -> dict:
+    """The App's verdict, in the shape of a Project's."""
+    checked = []
+    findings = []
+    for fn in APP_RULES:
+        found = list(fn(app, projects))
+        findings.extend(found)
+        checked.append(
+            {"rule": fn.rule_id, "summary": fn.summary, "status": "pass" if not found else "fail"}
+        )
+    return {
+        "app": app.app,
+        "ok": not findings,
+        "rules": checked,
+        "findings": [f.as_dict() for f in findings],
+    }
+
+
+def run(
+    projects: list,
+    against: Platform,
+    token: str | None,
+    app=None,
+    app_key: str | None = None,
+) -> dict:
     """Audit every Project on the list, and keep going past one that fails.
 
     A Project the token cannot read stops that Project and nothing else. The
     alternative - one 404 ending the run - means a repository renamed on a
     Tuesday silently stops the other Projects being audited at all.
+
+    `app` is the Prototypes' App: recorded `AppSettings`, or the list's entry
+    for it, read with `app_key`. It is judged against every Project on the
+    list, whether or not that Project could be read.
     """
     audited = []
     unreadable = []
@@ -105,11 +133,21 @@ def run(projects: list, against: Platform, token: str | None) -> dict:
             audited.append(audit_one(fetch(entry, token), against))
         except AuditError as exc:
             unreadable.append({"repository": entry, "error": str(exc)})
+    apps = []
+    if app is not None:
+        names = [e.repository if isinstance(e, Settings) else e for e in projects]
+        try:
+            record = app if isinstance(app, AppSettings) else fetch_app(app, app_key)
+            apps.append(audit_app(record, names))
+        except AuditError as exc:
+            unreadable.append({"app": app.app if isinstance(app, AppSettings) else app["slug"],
+                               "error": str(exc)})
     return {
         "contractVersion": against.contract_version,
         "checkedAt": date.today().isoformat(),
-        "ok": all(p["ok"] for p in audited) and not unreadable,
+        "ok": all(p["ok"] for p in audited + apps) and not unreadable,
         "projects": audited,
+        "apps": apps,
         "unreadable": unreadable,
     }
 
@@ -139,6 +177,30 @@ def read_projects(path: Path) -> list:
     return names
 
 
+def read_app(path: Path) -> dict | None:
+    """The list's entry for the Prototypes' App, or None if it names none.
+
+    `slug` names it in the report, `appId` signs its JWT and
+    `installationId` is the one installation whose repositories are read.
+    None of the three is a secret. The key is, and it is not here.
+    """
+    payload = read_json(path)
+    app = payload.get("app") if isinstance(payload, dict) else None
+    if app is None:
+        return None
+    if not (
+        isinstance(app, dict)
+        and isinstance(app.get("slug"), str)
+        and isinstance(app.get("appId"), int)
+        and isinstance(app.get("installationId"), int)
+    ):
+        raise AuditError(
+            f"{path}: `app` should be an object with a `slug` string and the "
+            "`appId` and `installationId` numbers"
+        )
+    return app
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="audit.py",
@@ -156,6 +218,12 @@ def main(argv=None) -> int:
         type=Path,
         nargs="+",
         help="recorded settings, read from disk - no token and no network",
+    )
+    parser.add_argument(
+        "--app-settings",
+        type=Path,
+        help="the Prototypes' App, recorded, judged with --settings - no key "
+             "and no network",
     )
     parser.add_argument("--json", action="store_true", help="emit the verdict as JSON")
     # Mutually exclusive rather than merely documented: `--message` promises
@@ -185,13 +253,20 @@ def main(argv=None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
 
+    if args.app_settings and not args.settings:
+        parser.error("--app-settings is recorded, and goes with --settings")
+
     try:
         against = platform()
+        app, app_key = None, None
         if args.settings:
             entries = [Settings.from_dict(read_json(p)) for p in args.settings]
             token = None
+            if args.app_settings:
+                app = AppSettings.from_dict(read_json(args.app_settings))
         else:
             entries = read_projects(args.projects)
+            app = read_app(args.projects)
             token = os.environ.get("AUDIT_TOKEN")
             if not token:
                 raise AuditError(
@@ -201,7 +276,16 @@ def main(argv=None) -> int:
                     "reason this audit runs in one place rather than in every "
                     "Project."
                 )
-        result = run(entries, against, token)
+            if app is not None:
+                app_key = os.environ.get("APP_PRIVATE_KEY")
+                if not app_key:
+                    raise AuditError(
+                        f"the list names the App {app['slug']}, and "
+                        "APP_PRIVATE_KEY is not set. No credential short of "
+                        "the App's own key can read a private App, so it "
+                        "would not be audited at all."
+                    )
+        result = run(entries, against, token, app, app_key)
     except AuditError as exc:
         print("the audit could not run: " + str(exc), file=sys.stderr)
         return 2

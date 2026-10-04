@@ -1,0 +1,7 @@
+{
+  "fires": [],
+  "why": "The installation as phase 4.2 will leave it: Prototypes, each joined by itself when the App created it (ticket 35), and no Project.",
+  "settings": {
+    "repositories": ["Dodeun/doden-prototypes-placeholder", "Dodeun/idea-one", "Dodeun/demo-for-a-prospect"]
+  }
+}

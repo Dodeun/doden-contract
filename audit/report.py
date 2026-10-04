@@ -26,14 +26,26 @@ DISCORD_LIMIT = 2000
 MARKS = {"pass": "PASS", "fail": "FAIL", "not checked": " -- "}
 
 
+def _name(entry: dict) -> str:
+    """A Project by its repository, the Prototypes' App by its slug."""
+    return f"App {entry['app']}" if "app" in entry else entry["repository"]
+
+
+def _marked(entry: dict) -> str:
+    """The same, as Discord shows it: the name itself in code."""
+    return f"App `{entry['app']}`" if "app" in entry else f"`{entry['repository']}`"
+
+
 def text(result: dict) -> str:
+    apps = result.get("apps", [])
     lines = [
         f"doden-contract {result['contractVersion']} - tier 2, "
-        f"{len(result['projects'])} Project(s)",
+        f"{len(result['projects'])} Project(s)"
+        + (f" and {len(apps)} App(s)" if apps else ""),
         "",
     ]
-    for project in result["projects"]:
-        lines.append(f"  {project['repository']}")
+    for project in result["projects"] + apps:
+        lines.append(f"  {_name(project)}")
         for entry in project["rules"]:
             lines.append(
                 f"    [{MARKS[entry['status']]}] {entry['rule']}: {entry['summary']}"
@@ -52,11 +64,12 @@ def text(result: dict) -> str:
         )
         lines.append("")
     for failure in result["unreadable"]:
-        lines.append(f"  {failure['repository']}: {failure['error']}")
+        lines.append(f"  {_name(failure)}: {failure['error']}")
     if result["unreadable"]:
         lines.append("")
     lines.append(
-        "PASS: every Project's settings match the contract."
+        ("PASS: every Project's settings, and the App's, match the contract."
+         if apps else "PASS: every Project's settings match the contract.")
         if result["ok"]
         else "FAIL: see above."
     )
@@ -72,16 +85,16 @@ def discord_message(result: dict) -> str:
     """One message. Which Project, which rule, and what to open."""
     head = f"**Platform Contract - tier 2 audit** - {result['checkedAt']}"
     lines = [head]
-    for project in result["projects"]:
+    for project in result["projects"] + result.get("apps", []):
         if project["ok"]:
-            lines.append(f"✅ `{project['repository']}`")
+            lines.append(f"✅ {_marked(project)}")
             continue
-        lines.append(f"❌ `{project['repository']}`")
+        lines.append(f"❌ {_marked(project)}")
         for finding in project["findings"]:
             lines.append(f"• **{finding['rule']}** - {finding['message']}")
     for failure in result["unreadable"]:
-        lines.append(f"⚠️ `{failure['repository']}` could not be read - {failure['error']}")
-    if not result["projects"] and not result["unreadable"]:
+        lines.append(f"⚠️ {_marked(failure)} could not be read - {failure['error']}")
+    if not result["projects"] and not result.get("apps") and not result["unreadable"]:
         lines.append("No Projects are on the list, so nothing was audited.")
 
     message = "\n".join(lines)

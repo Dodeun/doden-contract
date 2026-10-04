@@ -1,0 +1,17 @@
+{
+  "app": "doden-prototypes",
+  "registered_permissions": {
+    "administration": "write",
+    "contents": "write",
+    "metadata": "read",
+    "secrets": "write"
+  },
+  "granted_permissions": {
+    "administration": "write",
+    "contents": "write",
+    "metadata": "read",
+    "secrets": "write"
+  },
+  "repository_selection": "selected",
+  "repositories": ["Dodeun/doden-prototypes-placeholder"]
+}

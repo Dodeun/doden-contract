@@ -1,17 +1,26 @@
-"""Reading a Project's settings off GitHub. The only networked code here.
+"""Reading a Project's settings, and the Prototypes' App, off GitHub. The only
+networked code here.
 
 The seam this file exists to create: everything past it takes a `Settings`
-record and returns findings, so every rule can be tested against recorded
-settings rather than against a live repository. A rule that can only be
-exercised by breaking a real Project's configuration is a rule nobody will
-exercise twice.
+or an `AppSettings` record and returns findings, so every rule can be tested
+against recorded settings rather than against a live repository. A rule that
+can only be exercised by breaking a real Project's configuration is a rule
+nobody will exercise twice.
 
 Standard library only, like the checker, and for the same reason: this runs
 on a schedule that nobody watches, and a dependency is a thing that can break
-it on a morning when nobody touched it.
+it on a morning when nobody touched it. The App's JWT is signed by the
+`openssl` binary, which every runner and every machine here already has,
+rather than by a Python package that would have to be installed.
 """
 
+import base64
 import json
+import os
+import shutil
+import subprocess
+import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -62,27 +71,56 @@ class Settings:
         ignored is a rule that does not exist, and a field silently missing
         is a rule judging a default nobody chose.
         """
-        if not isinstance(raw, dict):
-            raise AuditError("recorded settings should be a JSON object")
-        known = set(cls.__dataclass_fields__)
-        unknown = set(raw) - known
-        if unknown:
-            raise AuditError(
-                "recorded settings carry fields this audit does not know: "
-                + ", ".join(sorted(unknown))
-            )
-        required = {"repository", "default_branch"}
-        missing = required - set(raw)
-        if missing:
-            raise AuditError(
-                "recorded settings are missing: " + ", ".join(sorted(missing))
-            )
-        return cls(**raw)
+        return _from_record(cls, raw, {"repository", "default_branch"}, "recorded settings")
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    """What the audit knows about the Prototypes' GitHub App (ADR-0012).
+
+    Not a repository: the App's own settings and its one installation's.
+    `registered_permissions` are what the App's settings ask for, and
+    `granted_permissions` what the installation has accepted - which is what
+    a token minted from it actually carries. They differ for as long as a
+    change to the App waits for the installation to accept it.
+    """
+
+    app: str
+    registered_permissions: dict
+    granted_permissions: dict
+    repository_selection: str
+    repositories: list
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "AppSettings":
+        """Build from a recorded payload, refusing the same two ways."""
+        return _from_record(cls, raw, set(cls.__dataclass_fields__), "recorded App settings")
+
+
+def _from_record(cls, raw, required: set, what: str):
+    """A record of `cls` from a recorded payload. See `Settings.from_dict`."""
+    if not isinstance(raw, dict):
+        raise AuditError(f"{what} should be a JSON object")
+    unknown = set(raw) - set(cls.__dataclass_fields__)
+    if unknown:
+        raise AuditError(
+            f"{what} carry fields this audit does not know: " + ", ".join(sorted(unknown))
+        )
+    missing = required - set(raw)
+    if missing:
+        raise AuditError(f"{what} are missing: " + ", ".join(sorted(missing)))
+    return cls(**raw)
 
 
 def _get(path: str, token: str, raw: bool = False):
     """One GET. Returns the decoded body, or None on 404."""
-    request = urllib.request.Request(API + path)
+    return _request("GET", path, token, raw=raw)
+
+
+def _request(method: str, path: str, token: str, body=None, raw: bool = False):
+    """One request. Returns the decoded body, or None on 404 or on no body."""
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(API + path, data=data, method=method)
     request.add_header("Authorization", "Bearer " + token)
     request.add_header("X-GitHub-Api-Version", API_VERSION)
     request.add_header("User-Agent", "doden-contract-audit")
@@ -90,9 +128,11 @@ def _get(path: str, token: str, raw: bool = False):
         "Accept",
         "application/vnd.github.raw+json" if raw else "application/vnd.github+json",
     )
+    if data is not None:
+        request.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            body = response.read().decode("utf-8")
+            text = response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None
@@ -104,18 +144,20 @@ def _get(path: str, token: str, raw: bool = False):
         # raised as such so that no rule can mistake it for a setting that is
         # absent.
         error = NotPermitted if exc.code == 403 else AuditError
-        raise error(f"GET {path} answered {exc.code}: {detail.strip()}") from exc
+        raise error(f"{method} {path} answered {exc.code}: {detail.strip()}") from exc
     except urllib.error.URLError as exc:
-        raise AuditError(f"GET {path} did not complete: {exc.reason}") from exc
+        raise AuditError(f"{method} {path} did not complete: {exc.reason}") from exc
     if raw:
-        return body
+        return text
+    if not text:
+        return None
     try:
-        return json.loads(body)
+        return json.loads(text)
     except json.JSONDecodeError as exc:
         # An HTML error page from a proxy, or a truncated response. Neither
         # is a statement about the Project, and letting it escape as a
         # traceback would exit 1 - the status that means "drifted".
-        raise AuditError(f"GET {path} did not answer JSON: {exc}") from exc
+        raise AuditError(f"{method} {path} did not answer JSON: {exc}") from exc
 
 
 def fetch(repository: str, token: str) -> Settings:
@@ -246,4 +288,126 @@ def fetch(repository: str, token: str) -> Settings:
         addon_documents=addon_documents,
         variables=variables,
         applied_branch_rules=applied_branch_rules,
+    )
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _app_jwt(app_id, key: str) -> str:
+    """A JWT for the App, valid nine minutes, signed with its private key.
+
+    GitHub refuses one valid for more than ten, and `iat` is set a minute in
+    the past against a clock that runs slightly ahead of GitHub's. The key
+    reaches `openssl` through a file only this process can read, removed
+    before this returns; it is never on a command line and never printed.
+    """
+    openssl = shutil.which("openssl")
+    if not openssl:
+        raise AuditError("openssl is not installed, so the App's JWT cannot be signed")
+    now = int(time.time())
+    head = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
+    claims = _b64url(
+        json.dumps({"iat": now - 60, "exp": now + 540, "iss": str(app_id)}).encode()
+    )
+    signing_input = f"{head}.{claims}".encode()
+    with tempfile.TemporaryDirectory(prefix="doden-app-") as directory:
+        path = os.path.join(directory, "key.pem")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(key)
+        signed = subprocess.run(
+            [openssl, "dgst", "-sha256", "-sign", path],
+            input=signing_input,
+            capture_output=True,
+        )
+    if signed.returncode != 0 or not signed.stdout:
+        raise AuditError(
+            "the App's private key could not sign a JWT. APP_PRIVATE_KEY should "
+            "hold the whole .pem file GitHub downloaded, header lines included."
+        )
+    return f"{head}.{claims}.{_b64url(signed.stdout)}"
+
+
+def fetch_app(app: dict, key: str) -> AppSettings:
+    """Read the Prototypes' App and the repositories its installation holds.
+
+    No credential short of the App's own key can: measured 2026-10-04 by
+    ticket 35's probe, a private App answers 404 to `GET /apps/{slug}` with
+    no token, with a fine-grained token and with the operator's own, and
+    `GET /user/installations/...` answers 403 to both tokens. So the key is
+    held here - and spent on as little as it can be. The JWT reads the App
+    and its installation, which is all a JWT can read. The listing needs an
+    installation token, and the one minted here may read metadata and
+    nothing else, so the token that touches repositories cannot change one.
+    It is revoked as soon as the listing is done, whether or not it worked.
+    """
+    slug, installation = app["slug"], app["installationId"]
+    jwt = _app_jwt(app["appId"], key)
+
+    me = _request("GET", "/app", jwt)
+    if not isinstance(me, dict) or me.get("slug") != slug:
+        found = me.get("slug") if isinstance(me, dict) else None
+        raise AuditError(
+            f"the key in APP_PRIVATE_KEY belongs to {found}, not {slug}, so "
+            f"{slug} was not read."
+            if found
+            else f"GET /app did not answer with an App, so {slug} was not read."
+        )
+
+    held = _request("GET", f"/app/installations/{installation}", jwt)
+    if not isinstance(held, dict):
+        raise AuditError(
+            f"{slug}'s installation {installation} answered 404: the App is no "
+            "longer installed there, or the id on the list is wrong. Which "
+            "repositories it holds is unknown, and it is not reported as "
+            "holding none."
+        )
+
+    minted = _request(
+        "POST",
+        f"/app/installations/{installation}/access_tokens",
+        jwt,
+        body={"permissions": {"metadata": "read"}},
+    )
+    if not isinstance(minted, dict) or not minted.get("token"):
+        raise AuditError(f"{slug}'s installation {installation} minted no token")
+    token = minted["token"]
+    try:
+        repositories = []
+        page = 1
+        while True:
+            listed = _request(
+                "GET", f"/installation/repositories?per_page=100&page={page}", token
+            )
+            if not isinstance(listed, dict):
+                raise AuditError(f"{slug}'s installation would not list its repositories")
+            batch = [r["full_name"] for r in listed.get("repositories", [])]
+            repositories.extend(batch)
+            # A listing that stops short of its own count would hide whatever
+            # was on the pages it did not reach - and a Project there is the
+            # whole of what this rule looks for.
+            if len(repositories) >= listed.get("total_count", 0):
+                break
+            if not batch:
+                raise AuditError(
+                    f"{slug}'s installation counts {listed.get('total_count')} "
+                    f"repositories and listed {len(repositories)}"
+                )
+            page += 1
+    finally:
+        # The token expires within the hour anyway. A revocation that fails
+        # is therefore not the audit failing, and must not hide a finding.
+        try:
+            _request("DELETE", "/installation/token", token)
+        except AuditError:
+            pass
+
+    return AppSettings(
+        app=slug,
+        registered_permissions=me.get("permissions") or {},
+        granted_permissions=held.get("permissions") or {},
+        repository_selection=held.get("repository_selection", ""),
+        repositories=sorted(repositories),
     )

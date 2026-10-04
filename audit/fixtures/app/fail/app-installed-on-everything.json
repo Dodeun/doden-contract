@@ -1,0 +1,5 @@
+{
+  "fires": ["app-sees-no-project"],
+  "why": "Installed on all repositories, the App holds every Project, and every repository created later, without anyone adding one. The installation page offers this as the first choice.",
+  "settings": { "repository_selection": "all" }
+}
