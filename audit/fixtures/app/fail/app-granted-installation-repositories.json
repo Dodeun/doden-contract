@@ -1,0 +1,5 @@
+{
+  "fires": ["app-cannot-widen"],
+  "why": "ADR-0012's note of 2026-10-04. With `installation_repositories` the App's own token can add any repository the operator administers to its installation, Projects included, and promotion stops being one-way. The realistic path is an agent advising the operator to grant it to clear an error.",
+  "settings": { "granted_permissions": { "installation_repositories": "write" } }
+}

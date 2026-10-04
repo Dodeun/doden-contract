@@ -1,0 +1,8 @@
+{
+  "fires": [],
+  "why": "The App holding fewer permissions than 4.2 plans is not drift: this audit watches for the one permission that moves the boundary, not for the list being exactly as written.",
+  "settings": {
+    "registered_permissions": { "secrets": null },
+    "granted_permissions": { "secrets": null }
+  }
+}

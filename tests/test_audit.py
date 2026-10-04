@@ -692,3 +692,449 @@ class TheContractItJudgesAgainst(unittest.TestCase):
             f"Contract version: `{platform.contract_version}`",
             platform.contract_document,
         )
+
+
+APP_FIXTURES = FIXTURES / "app"
+
+
+def merge_app(overlay: dict) -> dict:
+    """Apply an App fixture overlay to the App's conforming settings.
+
+    Like `merge`, `settings` replaces top-level fields and merges one level
+    into a dict. Unlike it, `null` inside that dict removes the key, which is
+    how a fixture takes a permission away.
+    """
+    app = json.loads((APP_FIXTURES / "conforming.json").read_text(encoding="utf-8"))
+    for field, value in (overlay.get("settings") or {}).items():
+        if isinstance(value, dict) and isinstance(app.get(field), dict):
+            for key, level in value.items():
+                if level is None:
+                    app[field].pop(key, None)
+                else:
+                    app[field][key] = level
+        else:
+            app[field] = value
+    return app
+
+
+class AppTestCase(AuditTestCase):
+    def audit_app(self, app: dict, *settings: dict):
+        """Run audit.py over a recorded App and recorded Projects.
+
+        The Projects the App is judged against are the ones on the run, as
+        they are on a real run: the list is the list, whichever way it was
+        read.
+        """
+        directory = Path(tempfile.mkdtemp(prefix="doden-app-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        app_path = directory / "app.json"
+        app_path.write_text(json.dumps(app), encoding="utf-8")
+        paths = []
+        for index, payload in enumerate(settings or (merge({}),)):
+            path = directory / f"{index}.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            paths.append(str(path))
+        proc = subprocess.run(
+            [sys.executable, str(self.home / "audit.py"), "--json",
+             "--settings", *paths, "--app-settings", str(app_path)],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 2:
+            return proc.stderr, 2
+        return json.loads(proc.stdout), proc.returncode
+
+
+class TheApp(AppTestCase):
+    """Decision 32's second condition: the App cannot widen its own reach.
+
+    Promotion is one-way only while the Prototypes' App can neither add a
+    repository to its installation nor already hold a Project. Both are
+    settings of the App, not of any repository, so they are judged on a
+    record of the App.
+    """
+
+    def test_the_app_as_it_was_installed_passes(self):
+        result, status = self.audit_app(merge_app({}))
+        self.assertEqual(0, status, result)
+        app = result["apps"][0]
+        self.assertEqual("doden-prototypes", app["app"])
+        self.assertEqual([], app["findings"])
+        for entry in app["rules"]:
+            self.assertEqual("pass", entry["status"], entry["rule"])
+
+    def test_each_failing_fixture_fires_exactly_what_it_claims(self):
+        for path in sorted((APP_FIXTURES / "fail").glob("*.json")):
+            with self.subTest(fixture=path.name):
+                overlay = json.loads(path.read_text(encoding="utf-8"))
+                self.assertTrue(overlay.get("why"))
+                result, status = self.audit_app(merge_app(overlay))
+                self.assertEqual(1, status, result)
+                self.assertTrue(result["projects"][0]["ok"], "the Project did not drift")
+                fired = {f["rule"] for f in result["apps"][0]["findings"]}
+                self.assertEqual(set(overlay["fires"]), fired)
+
+    def test_each_passing_fixture_comes_back_clean(self):
+        for path in sorted((APP_FIXTURES / "pass").glob("*.json")):
+            with self.subTest(fixture=path.name):
+                overlay = json.loads(path.read_text(encoding="utf-8"))
+                result, status = self.audit_app(merge_app(overlay))
+                self.assertEqual(0, status, result)
+                self.assertEqual([], result["apps"][0]["findings"])
+
+    def test_every_rule_has_a_failing_fixture(self):
+        result, _ = self.audit_app(merge_app({}))
+        rules = {entry["rule"] for entry in result["apps"][0]["rules"]}
+        self.assertEqual({"app-cannot-widen", "app-sees-no-project"}, rules)
+        covered = set()
+        for path in (APP_FIXTURES / "fail").glob("*.json"):
+            covered |= set(json.loads(path.read_text(encoding="utf-8"))["fires"])
+        self.assertEqual(rules, covered)
+
+    def test_a_finding_names_the_permission_or_the_repository(self):
+        expected = {
+            "app-granted-installation-repositories.json": "installation_repositories",
+            "app-requests-installation-repositories.json": "installation_repositories",
+            "app-sees-a-project.json": "Dodeun/example-project",
+            "app-installed-on-everything.json": "all",
+        }
+        for name, needle in expected.items():
+            with self.subTest(fixture=name):
+                overlay = json.loads((APP_FIXTURES / "fail" / name).read_text(encoding="utf-8"))
+                result, _ = self.audit_app(merge_app(overlay))
+                for finding in result["apps"][0]["findings"]:
+                    self.assertIn(needle, finding["message"])
+                    self.assertIn("doden-prototypes", finding["message"])
+                    self.assertTrue(finding["message"].rstrip().endswith("."))
+
+    def test_a_granted_and_a_requested_permission_are_told_apart(self):
+        """Granted is held today; requested is one click from being held.
+        The operator does something different about each."""
+        granted = json.loads(
+            (APP_FIXTURES / "fail" / "app-granted-installation-repositories.json")
+            .read_text(encoding="utf-8")
+        )
+        requested = json.loads(
+            (APP_FIXTURES / "fail" / "app-requests-installation-repositories.json")
+            .read_text(encoding="utf-8")
+        )
+        held, _ = self.audit_app(merge_app(granted))
+        asked, _ = self.audit_app(merge_app(requested))
+        self.assertNotEqual(
+            held["apps"][0]["findings"][0]["message"],
+            asked["apps"][0]["findings"][0]["message"],
+        )
+
+    def test_a_project_is_found_whatever_the_case_of_its_name(self):
+        """GitHub's names are case-insensitive, and so is a match on them."""
+        result, status = self.audit_app(
+            merge_app({"settings": {"repositories": ["dodeun/EXAMPLE-project"]}})
+        )
+        self.assertEqual(1, status, result)
+        self.assertEqual(
+            {"app-sees-no-project"}, {f["rule"] for f in result["apps"][0]["findings"]}
+        )
+
+    def test_a_run_without_an_app_audits_none(self):
+        result, status = self.audit(merge({}))
+        self.assertEqual(0, status, result)
+        self.assertEqual([], result["apps"])
+
+    def test_app_settings_carrying_an_unknown_field_is_exit_2(self):
+        app = merge_app({})
+        app["webhook_active"] = False
+        message, status = self.audit_app(app)
+        self.assertEqual(2, status)
+        self.assertIn("webhook_active", message)
+        self.assertNotIn("Traceback", message)
+
+    def test_app_settings_missing_a_field_is_exit_2(self):
+        app = merge_app({})
+        del app["granted_permissions"]
+        message, status = self.audit_app(app)
+        self.assertEqual(2, status)
+        self.assertIn("granted_permissions", message)
+
+
+class TheAppInTheReport(AppTestCase):
+    """The report names the App the way it names a Project."""
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import report
+
+        self.report = report
+
+    def test_a_clean_run_names_the_app(self):
+        result, _ = self.audit_app(merge_app({}))
+        message = self.report.discord_message(result)
+        self.assertIn("✅ App `doden-prototypes`", message)
+        self.assertIn("✅ `Dodeun/example-project`", message)
+        self.assertIn("doden-prototypes", self.report.text(result))
+
+    def test_drift_names_the_app_and_the_rule(self):
+        overlay = json.loads(
+            (APP_FIXTURES / "fail" / "app-sees-a-project.json").read_text(encoding="utf-8")
+        )
+        result, _ = self.audit_app(merge_app(overlay))
+        message = self.report.discord_message(result)
+        self.assertIn("❌ App `doden-prototypes`", message)
+        self.assertIn("**app-sees-no-project**", message)
+        self.assertIn("app-sees-no-project", self.report.text(result))
+
+    def test_an_app_that_could_not_be_read_is_named(self):
+        result = {
+            "contractVersion": "v3",
+            "checkedAt": "2026-10-05",
+            "ok": False,
+            "projects": [],
+            "apps": [],
+            "unreadable": [{"app": "doden-prototypes", "error": "GET /app answered 401"}],
+        }
+        self.assertIn(
+            "⚠️ App `doden-prototypes` could not be read",
+            self.report.discord_message(result),
+        )
+        self.assertIn(
+            "App doden-prototypes: GET /app answered 401", self.report.text(result)
+        )
+
+
+class TheAppsKey(AuditTestCase):
+    """An App on the list with no key is the audit unable to run.
+
+    Not a pass and not a silent skip: the list says the App is watched, and
+    a run that did not look must not read as one that looked and was happy.
+    """
+
+    APP = {"slug": "doden-prototypes", "appId": 5188376, "installationId": 167903513}
+
+    def run_list(self, listing: dict, **env):
+        directory = Path(tempfile.mkdtemp(prefix="doden-projects-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        path = directory / "projects.json"
+        path.write_text(json.dumps(listing))
+        environment = dict(os.environ, AUDIT_TOKEN="not-a-real-token")
+        environment.pop("APP_PRIVATE_KEY", None)
+        environment.update(env)
+        return subprocess.run(
+            [sys.executable, str(self.home / "audit.py"), "--projects", str(path)],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+    def test_an_app_on_the_list_without_its_key_is_exit_2(self):
+        proc = self.run_list({"projects": [], "app": self.APP})
+        self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
+        self.assertIn("App doden-prototypes: APP_PRIVATE_KEY is not set", proc.stdout)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_an_app_that_cannot_be_read_does_not_hide_the_projects(self):
+        """Report on every run: a missing key stops the App, and the
+        Projects' verdicts are still printed and posted."""
+        spec = importlib.util.spec_from_file_location(
+            "doden_audit_run", self.home / "audit.py"
+        )
+        entry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(entry)
+
+        result = entry.run(
+            [entry.Settings.from_dict(merge({}))], entry.platform(), None, self.APP, None
+        )
+        self.assertEqual(
+            ["Dodeun/example-project"], [p["repository"] for p in result["projects"]]
+        )
+        self.assertEqual([], result["apps"])
+        self.assertEqual("doden-prototypes", result["unreadable"][0]["app"])
+        self.assertFalse(result["ok"])
+
+    def test_an_app_entry_of_the_wrong_shape_is_exit_2(self):
+        proc = self.run_list(
+            {"projects": [], "app": {"slug": "doden-prototypes"}},
+            APP_PRIVATE_KEY="not-a-key",
+        )
+        self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
+        self.assertIn("appId", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
+
+class ReadingTheAppOffGitHub(unittest.TestCase):
+    """The App is read with its own key, and the key is used for as little
+    as it can be.
+
+    No read-only credential can see a private App: measured 2026-10-04 by
+    ticket 35's probe, `GET /apps/{slug}` answered 404 to no token, to the
+    audit's fine-grained token and to the operator's own, and both
+    `/user/installations` reads answered 403. So the audit holds a key of the
+    App's - and spends it on the JWT reads and on minting one token that can
+    read metadata and nothing else, revoked when the listing is done.
+    """
+
+    APP = {"slug": "doden-prototypes", "appId": 5188376, "installationId": 167903513}
+    PERMISSIONS = {"administration": "write", "contents": "write",
+                   "metadata": "read", "secrets": "write"}
+    FIRST_PAGE = ("GET", "/installation/repositories?per_page=100&page=1")
+    SECOND_PAGE = ("GET", "/installation/repositories?per_page=100&page=2")
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import AuditError, settings
+
+        self.settings = settings
+        self.AuditError = AuditError
+        self.calls = []
+
+    def github(self, overrides=None):
+        """Stand in for the API. Records every call; answers by (method, path)."""
+        answers = {
+            ("GET", "/app"): {"slug": "doden-prototypes", "permissions": dict(self.PERMISSIONS)},
+            ("GET", "/app/installations/167903513"): {
+                "repository_selection": "selected", "permissions": dict(self.PERMISSIONS),
+            },
+            ("POST", "/app/installations/167903513/access_tokens"): {"token": "minted"},
+            self.FIRST_PAGE: {
+                "total_count": 1,
+                "repositories": [{"full_name": "Dodeun/doden-prototypes-placeholder"}],
+            },
+            ("DELETE", "/installation/token"): None,
+        }
+        answers.update(overrides or {})
+
+        def _request(method, path, token, body=None, raw=False):
+            self.calls.append((method, path, token, body))
+            answer = answers.get((method, path))
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        original_request, original_jwt = self.settings._request, self.settings._app_jwt
+        self.settings._request = _request
+        self.settings._app_jwt = lambda app_id, key: "the-jwt"
+        self.addCleanup(setattr, self.settings, "_request", original_request)
+        self.addCleanup(setattr, self.settings, "_app_jwt", original_jwt)
+
+    def test_what_is_read_becomes_the_record_the_rules_judge(self):
+        self.github()
+        got = self.settings.fetch_app(self.APP, "a key")
+        self.assertEqual("doden-prototypes", got.slug)
+        self.assertEqual(self.PERMISSIONS, got.registered_permissions)
+        self.assertEqual(self.PERMISSIONS, got.granted_permissions)
+        self.assertEqual("selected", got.repository_selection)
+        self.assertEqual(["Dodeun/doden-prototypes-placeholder"], got.repositories)
+
+    def test_the_listing_token_can_read_metadata_and_nothing_else(self):
+        self.github()
+        self.settings.fetch_app(self.APP, "a key")
+        mint = [c for c in self.calls if c[0] == "POST"]
+        self.assertEqual([{"permissions": {"metadata": "read"}}], [c[3] for c in mint])
+        listing = [c for c in self.calls if c[1].startswith("/installation/repositories")]
+        self.assertEqual({"minted"}, {c[2] for c in listing})
+
+    def test_the_token_is_revoked_when_the_listing_is_done(self):
+        self.github()
+        self.settings.fetch_app(self.APP, "a key")
+        self.assertEqual(("DELETE", "/installation/token", "minted", None), self.calls[-1])
+
+    def test_the_token_is_revoked_when_the_listing_fails(self):
+        self.github({
+            self.FIRST_PAGE: self.AuditError("GET /installation/repositories answered 502"),
+        })
+        with self.assertRaises(self.AuditError):
+            self.settings.fetch_app(self.APP, "a key")
+        self.assertEqual(("DELETE", "/installation/token", "minted", None), self.calls[-1])
+
+    def test_every_page_of_the_installation_is_read(self):
+        names = [{"full_name": f"Dodeun/p{i}"} for i in range(150)]
+        self.github({
+            self.FIRST_PAGE: {"total_count": 150, "repositories": names[:100]},
+            self.SECOND_PAGE: {"total_count": 150, "repositories": names[100:]},
+        })
+        got = self.settings.fetch_app(self.APP, "a key")
+        self.assertEqual(150, len(got.repositories))
+
+    def test_a_key_of_another_app_is_the_audit_failing(self):
+        self.github({("GET", "/app"): {"slug": "someone-else", "permissions": {}}})
+        with self.assertRaises(self.AuditError) as caught:
+            self.settings.fetch_app(self.APP, "a key")
+        self.assertIn("someone-else", str(caught.exception))
+
+    def test_an_installation_that_is_gone_is_the_audit_failing(self):
+        """`None` here would be an App installed nowhere, which passes every
+        rule. An installation id that no longer answers is a question
+        nobody answered."""
+        self.github({("GET", "/app/installations/167903513"): None})
+        with self.assertRaises(self.AuditError) as caught:
+            self.settings.fetch_app(self.APP, "a key")
+        self.assertIn("167903513", str(caught.exception))
+
+    def test_a_listing_that_comes_up_short_is_the_audit_failing(self):
+        """A page that ends early would hide whatever was on the next one."""
+        self.github({
+            self.FIRST_PAGE: {"total_count": 3, "repositories": [{"full_name": "Dodeun/one"}]},
+            self.SECOND_PAGE: {"total_count": 3, "repositories": []},
+        })
+        with self.assertRaises(self.AuditError):
+            self.settings.fetch_app(self.APP, "a key")
+
+    def test_a_listing_without_its_count_is_the_audit_failing(self):
+        """Without `total_count` there is no telling a last page from a first."""
+        self.github({
+            self.FIRST_PAGE: {"repositories": [{"full_name": "Dodeun/one"}]},
+        })
+        with self.assertRaises(self.AuditError):
+            self.settings.fetch_app(self.APP, "a key")
+
+    def test_a_repository_without_a_name_is_the_audit_failing(self):
+        """A KeyError would be a traceback, and a traceback exits 1: "drifted"."""
+        self.github({
+            self.FIRST_PAGE: {"total_count": 1, "repositories": [{"name": "one"}]},
+        })
+        with self.assertRaises(self.AuditError):
+            self.settings.fetch_app(self.APP, "a key")
+
+
+@unittest.skipUnless(shutil.which("openssl"), "openssl signs the App's JWT")
+class SigningTheAppsJwt(unittest.TestCase):
+    """The one thing done with the key itself, checked against a throwaway."""
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import AuditError, settings
+
+        self.settings = settings
+        self.AuditError = AuditError
+
+    def test_the_jwt_verifies_against_the_key_and_names_the_app(self):
+        import base64
+
+        directory = Path(tempfile.mkdtemp(prefix="doden-jwt-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        key, public = directory / "key.pem", directory / "key.pub"
+        subprocess.run(["openssl", "genrsa", "-out", str(key), "2048"],
+                       check=True, capture_output=True)
+        subprocess.run(["openssl", "rsa", "-in", str(key), "-pubout", "-out", str(public)],
+                       check=True, capture_output=True)
+
+        token = self.settings._app_jwt(5188376, key.read_text())
+        head, body, signature = token.split(".")
+
+        def decode(part):
+            return base64.urlsafe_b64decode(part + "=" * (-len(part) % 4))
+
+        claims = json.loads(decode(body))
+        self.assertEqual("5188376", claims["iss"])
+        self.assertLessEqual(claims["exp"] - claims["iat"], 600, "GitHub refuses more")
+
+        (directory / "signed").write_bytes(f"{head}.{body}".encode())
+        (directory / "signature").write_bytes(decode(signature))
+        verified = subprocess.run(
+            ["openssl", "dgst", "-sha256", "-verify", str(public),
+             "-signature", str(directory / "signature"), str(directory / "signed")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(0, verified.returncode, verified.stdout + verified.stderr)
+
+    def test_a_key_that_is_not_one_is_the_audit_failing(self):
+        with self.assertRaises(self.AuditError):
+            self.settings._app_jwt(5188376, "not a key")

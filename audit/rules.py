@@ -559,3 +559,85 @@ def no_repository_variables(settings, platform):
 
 def _digest(text: str) -> str:
     return hashlib.sha256(text.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+
+
+# The rules over the Prototypes' GitHub App (ADR-0012), which is not a
+# repository. Each takes the App's `AppSettings` and the names of the Projects
+# on the list, and yields `Finding`s, the same way a Project's rules do.
+APP_RULES: list = []
+
+# The permission that lets an App's own token add a repository to its
+# installation (`PUT /user/installations/{id}/repositories/{repo}`). GitHub's
+# reference has listed it since 2026-09-29; on 2026-10-04 the App settings
+# page did not offer it. Without it, promotion is one-way by construction.
+WIDENING_PERMISSION = "installation_repositories"
+
+
+def app_rule(rule_id: str, summary: str):
+    """Register a rule over the App. `summary` is printed beside its verdict."""
+
+    def register(fn):
+        fn.rule_id = rule_id
+        fn.summary = summary
+        APP_RULES.append(fn)
+        return fn
+
+    return register
+
+
+@app_rule("app-cannot-widen", "the App cannot add a repository to its own installation")
+def app_cannot_widen(app, projects):
+    """Decision 32's second condition, and ADR-0012's note of 2026-10-04.
+
+    Granted is held today. Requested is one click on the installation's
+    review page from being held, which is reported now rather than on the
+    Monday after the click: the realistic way it is accepted is an agent
+    advising the operator to accept it to clear an error.
+    """
+    granted = app.granted_permissions.get(WIDENING_PERMISSION)
+    if granted:
+        yield Finding(
+            "app-cannot-widen",
+            f"{app.slug}'s installation holds `{WIDENING_PERMISSION}: {granted}`, "
+            "so the App's own token can add any repository the operator "
+            "administers to its installation, Projects included, and "
+            "promotion is no longer one-way (ADR-0012). Remove the permission "
+            "in the App's settings.",
+        )
+    requested = app.registered_permissions.get(WIDENING_PERMISSION)
+    if requested and not granted:
+        yield Finding(
+            "app-cannot-widen",
+            f"{app.slug}'s settings request `{WIDENING_PERMISSION}: {requested}` "
+            "and its installation has not accepted it yet. Accepted, it would "
+            "let the App's own token add any repository, Projects included, "
+            "to its installation (ADR-0012). Remove it from the App's "
+            "settings rather than accepting it.",
+        )
+
+
+@app_rule("app-sees-no-project", "no Project is in the App's installation")
+def app_sees_no_project(app, projects):
+    """A Project the App can see is a Project an agent can delete (ADR-0012).
+
+    GitHub's names are case-insensitive, so the match is too.
+    """
+    if app.repository_selection != "selected":
+        yield Finding(
+            "app-sees-no-project",
+            f"{app.slug} is installed on `{app.repository_selection}` "
+            "repositories rather than on selected ones, so every Project is "
+            "in its installation and an agent holding it can delete any of "
+            "them (ADR-0012). Change the installation to only select "
+            "repositories.",
+        )
+        return
+    held = {name.lower() for name in app.repositories}
+    for project in projects:
+        if project.lower() in held:
+            yield Finding(
+                "app-sees-no-project",
+                f"{project} is in {app.slug}'s installation, so an agent "
+                "holding the App can administer and delete it (ADR-0012). "
+                "Remove it from the installation's repository access.",
+            )
