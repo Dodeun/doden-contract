@@ -598,7 +598,7 @@ def app_cannot_widen(app, projects):
     if granted:
         yield Finding(
             "app-cannot-widen",
-            f"{app.app}'s installation holds `{WIDENING_PERMISSION}: {granted}`, "
+            f"{app.slug}'s installation holds `{WIDENING_PERMISSION}: {granted}`, "
             "so the App's own token can add any repository the operator "
             "administers to its installation, Projects included, and "
             "promotion is no longer one-way (ADR-0012). Remove the permission "
@@ -608,7 +608,7 @@ def app_cannot_widen(app, projects):
     if requested and not granted:
         yield Finding(
             "app-cannot-widen",
-            f"{app.app}'s settings request `{WIDENING_PERMISSION}: {requested}` "
+            f"{app.slug}'s settings request `{WIDENING_PERMISSION}: {requested}` "
             "and its installation has not accepted it yet. Accepted, it would "
             "let the App's own token add any repository, Projects included, "
             "to its installation (ADR-0012). Remove it from the App's "
@@ -625,7 +625,7 @@ def app_sees_no_project(app, projects):
     if app.repository_selection != "selected":
         yield Finding(
             "app-sees-no-project",
-            f"{app.app} is installed on `{app.repository_selection}` "
+            f"{app.slug} is installed on `{app.repository_selection}` "
             "repositories rather than on selected ones, so every Project is "
             "in its installation and an agent holding it can delete any of "
             "them (ADR-0012). Change the installation to only select "
@@ -637,7 +637,7 @@ def app_sees_no_project(app, projects):
         if project.lower() in held:
             yield Finding(
                 "app-sees-no-project",
-                f"{project} is in {app.app}'s installation, so an agent "
+                f"{project} is in {app.slug}'s installation, so an agent "
                 "holding the App can administer and delete it (ADR-0012). "
                 "Remove it from the installation's repository access.",
             )

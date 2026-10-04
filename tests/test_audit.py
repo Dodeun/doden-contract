@@ -700,9 +700,9 @@ APP_FIXTURES = FIXTURES / "app"
 def merge_app(overlay: dict) -> dict:
     """Apply an App fixture overlay to the App's conforming settings.
 
-    The same shape as `merge`: `settings` replaces top-level fields and
-    merges one level into a dict, where `null` removes a key - which is how
-    a fixture takes a permission away.
+    Like `merge`, `settings` replaces top-level fields and merges one level
+    into a dict. Unlike it, `null` inside that dict removes the key, which is
+    how a fixture takes a permission away.
     """
     app = json.loads((APP_FIXTURES / "conforming.json").read_text(encoding="utf-8"))
     for field, value in (overlay.get("settings") or {}).items():
@@ -811,10 +811,12 @@ class TheApp(AppTestCase):
         """Granted is held today; requested is one click from being held.
         The operator does something different about each."""
         granted = json.loads(
-            (APP_FIXTURES / "fail" / "app-granted-installation-repositories.json").read_text()
+            (APP_FIXTURES / "fail" / "app-granted-installation-repositories.json")
+            .read_text(encoding="utf-8")
         )
         requested = json.loads(
-            (APP_FIXTURES / "fail" / "app-requests-installation-repositories.json").read_text()
+            (APP_FIXTURES / "fail" / "app-requests-installation-repositories.json")
+            .read_text(encoding="utf-8")
         )
         held, _ = self.audit_app(merge_app(granted))
         asked, _ = self.audit_app(merge_app(requested))
@@ -925,8 +927,27 @@ class TheAppsKey(AuditTestCase):
     def test_an_app_on_the_list_without_its_key_is_exit_2(self):
         proc = self.run_list({"projects": [], "app": self.APP})
         self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
-        self.assertIn("APP_PRIVATE_KEY", proc.stderr)
+        self.assertIn("App doden-prototypes: APP_PRIVATE_KEY is not set", proc.stdout)
         self.assertNotIn("Traceback", proc.stderr)
+
+    def test_an_app_that_cannot_be_read_does_not_hide_the_projects(self):
+        """Report on every run: a missing key stops the App, and the
+        Projects' verdicts are still printed and posted."""
+        spec = importlib.util.spec_from_file_location(
+            "doden_audit_run", self.home / "audit.py"
+        )
+        entry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(entry)
+
+        result = entry.run(
+            [entry.Settings.from_dict(merge({}))], entry.platform(), None, self.APP, None
+        )
+        self.assertEqual(
+            ["Dodeun/example-project"], [p["repository"] for p in result["projects"]]
+        )
+        self.assertEqual([], result["apps"])
+        self.assertEqual("doden-prototypes", result["unreadable"][0]["app"])
+        self.assertFalse(result["ok"])
 
     def test_an_app_entry_of_the_wrong_shape_is_exit_2(self):
         proc = self.run_list(
@@ -996,7 +1017,7 @@ class ReadingTheAppOffGitHub(unittest.TestCase):
     def test_what_is_read_becomes_the_record_the_rules_judge(self):
         self.github()
         got = self.settings.fetch_app(self.APP, "a key")
-        self.assertEqual("doden-prototypes", got.app)
+        self.assertEqual("doden-prototypes", got.slug)
         self.assertEqual(self.PERMISSIONS, got.registered_permissions)
         self.assertEqual(self.PERMISSIONS, got.granted_permissions)
         self.assertEqual("selected", got.repository_selection)
@@ -1052,6 +1073,22 @@ class ReadingTheAppOffGitHub(unittest.TestCase):
         self.github({
             self.FIRST_PAGE: {"total_count": 3, "repositories": [{"full_name": "Dodeun/one"}]},
             self.SECOND_PAGE: {"total_count": 3, "repositories": []},
+        })
+        with self.assertRaises(self.AuditError):
+            self.settings.fetch_app(self.APP, "a key")
+
+    def test_a_listing_without_its_count_is_the_audit_failing(self):
+        """Without `total_count` there is no telling a last page from a first."""
+        self.github({
+            self.FIRST_PAGE: {"repositories": [{"full_name": "Dodeun/one"}]},
+        })
+        with self.assertRaises(self.AuditError):
+            self.settings.fetch_app(self.APP, "a key")
+
+    def test_a_repository_without_a_name_is_the_audit_failing(self):
+        """A KeyError would be a traceback, and a traceback exits 1: "drifted"."""
+        self.github({
+            self.FIRST_PAGE: {"total_count": 1, "repositories": [{"name": "one"}]},
         })
         with self.assertRaises(self.AuditError):
             self.settings.fetch_app(self.APP, "a key")

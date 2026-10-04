@@ -85,7 +85,7 @@ class AppSettings:
     change to the App waits for the installation to accept it.
     """
 
-    app: str
+    slug: str
     registered_permissions: dict
     granted_permissions: dict
     repository_selection: str
@@ -372,7 +372,7 @@ def fetch_app(app: dict, key: str) -> AppSettings:
         body={"permissions": {"metadata": "read"}},
     )
     if not isinstance(minted, dict) or not minted.get("token"):
-        raise AuditError(f"{slug}'s installation {installation} minted no token")
+        raise AuditError(f"{slug}'s installation {installation} minted no token.")
     token = minted["token"]
     try:
         repositories = []
@@ -381,19 +381,27 @@ def fetch_app(app: dict, key: str) -> AppSettings:
             listed = _request(
                 "GET", f"/installation/repositories?per_page=100&page={page}", token
             )
-            if not isinstance(listed, dict):
-                raise AuditError(f"{slug}'s installation would not list its repositories")
-            batch = [r["full_name"] for r in listed.get("repositories", [])]
-            repositories.extend(batch)
-            # A listing that stops short of its own count would hide whatever
-            # was on the pages it did not reach - and a Project there is the
-            # whole of what this rule looks for.
-            if len(repositories) >= listed.get("total_count", 0):
+            # Anything but the documented shape is the audit unable to read
+            # the installation. A KeyError here would be a traceback, which
+            # exits 1 - "drifted" - and a listing without its count would end
+            # after one page, hiding whatever was on the next: a Project there
+            # is the whole of what the rule looks for.
+            batch = listed.get("repositories") if isinstance(listed, dict) else None
+            total = listed.get("total_count") if isinstance(listed, dict) else None
+            if not isinstance(batch, list) or not isinstance(total, int) or not all(
+                isinstance(r, dict) and isinstance(r.get("full_name"), str) for r in batch
+            ):
+                raise AuditError(
+                    f"{slug}'s installation did not list its repositories in the "
+                    "shape GitHub documents, so which ones it holds is unknown."
+                )
+            repositories.extend(r["full_name"] for r in batch)
+            if len(repositories) >= total:
                 break
             if not batch:
                 raise AuditError(
-                    f"{slug}'s installation counts {listed.get('total_count')} "
-                    f"repositories and listed {len(repositories)}"
+                    f"{slug}'s installation counts {total} repositories and "
+                    f"listed {len(repositories)}."
                 )
             page += 1
     finally:
@@ -405,7 +413,7 @@ def fetch_app(app: dict, key: str) -> AppSettings:
             pass
 
     return AppSettings(
-        app=slug,
+        slug=slug,
         registered_permissions=me.get("permissions") or {},
         granted_permissions=held.get("permissions") or {},
         repository_selection=held.get("repository_selection", ""),

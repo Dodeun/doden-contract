@@ -1,5 +1,5 @@
 {
-  "app": "doden-prototypes",
+  "slug": "doden-prototypes",
   "registered_permissions": {
     "administration": "write",
     "contents": "write",

@@ -99,7 +99,7 @@ def audit_app(app: AppSettings, projects: list) -> dict:
             {"rule": fn.rule_id, "summary": fn.summary, "status": "pass" if not found else "fail"}
         )
     return {
-        "app": app.app,
+        "app": app.slug,
         "ok": not findings,
         "rules": checked,
         "findings": [f.as_dict() for f in findings],
@@ -110,7 +110,7 @@ def run(
     projects: list,
     against: Platform,
     token: str | None,
-    app=None,
+    app: "AppSettings | dict | None" = None,
     app_key: str | None = None,
 ) -> dict:
     """Audit every Project on the list, and keep going past one that fails.
@@ -121,7 +121,9 @@ def run(
 
     `app` is the Prototypes' App: recorded `AppSettings`, or the list's entry
     for it, read with `app_key`. It is judged against every Project on the
-    list, whether or not that Project could be read.
+    list, whether or not that Project could be read. An App that cannot be
+    read - no key, a wrong one, an installation gone - stops the App and
+    nothing else, like a Project: the Projects are still reported.
     """
     audited = []
     unreadable = []
@@ -136,12 +138,20 @@ def run(
     apps = []
     if app is not None:
         names = [e.repository if isinstance(e, Settings) else e for e in projects]
-        try:
-            record = app if isinstance(app, AppSettings) else fetch_app(app, app_key)
-            apps.append(audit_app(record, names))
-        except AuditError as exc:
-            unreadable.append({"app": app.app if isinstance(app, AppSettings) else app["slug"],
-                               "error": str(exc)})
+        if isinstance(app, AppSettings):
+            apps.append(audit_app(app, names))
+        elif not app_key:
+            unreadable.append({
+                "app": app["slug"],
+                "error": "APP_PRIVATE_KEY is not set. No credential short of the "
+                         "App's own key can read a private App, so it was not "
+                         "audited at all.",
+            })
+        else:
+            try:
+                apps.append(audit_app(fetch_app(app, app_key), names))
+            except AuditError as exc:
+                unreadable.append({"app": app["slug"], "error": str(exc)})
     return {
         "contractVersion": against.contract_version,
         "checkedAt": date.today().isoformat(),
@@ -276,15 +286,7 @@ def main(argv=None) -> int:
                     "reason this audit runs in one place rather than in every "
                     "Project."
                 )
-            if app is not None:
-                app_key = os.environ.get("APP_PRIVATE_KEY")
-                if not app_key:
-                    raise AuditError(
-                        f"the list names the App {app['slug']}, and "
-                        "APP_PRIVATE_KEY is not set. No credential short of "
-                        "the App's own key can read a private App, so it "
-                        "would not be audited at all."
-                    )
+            app_key = os.environ.get("APP_PRIVATE_KEY")
         result = run(entries, against, token, app, app_key)
     except AuditError as exc:
         print("the audit could not run: " + str(exc), file=sys.stderr)

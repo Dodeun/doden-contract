@@ -282,5 +282,6 @@ held, and used for as little as it can be: the JWT reads the App and its
 installation, and the one installation token minted to list the
 repositories may read metadata and nothing else, and is revoked as soon as
 the listing is done. A list naming the App with no key is exit **2**, never a
-skipped App. Recorded App settings are judged with `--app-settings`, beside
-`--settings`; the fixtures are in `audit/fixtures/app/`.
+skipped App, and the Projects are still reported. Recorded App settings
+are judged with `--app-settings`, beside `--settings`; the fixtures are in
+`audit/fixtures/app/`.
