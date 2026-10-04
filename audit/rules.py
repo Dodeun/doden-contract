@@ -35,6 +35,10 @@ REQUIRED_CONTEXTS = ("test", "contract / tier-1")
 # rewritten or removed instead.
 BRANCH_RULES = ("pull_request", "deletion", "non_fast_forward")
 
+# Every rule type the contract needs GitHub to *apply* to the default branch:
+# the three above, and the one that makes the checks refuse a merge.
+APPLIED_BRANCH_RULES = BRANCH_RULES + ("required_status_checks",)
+
 # The rules a release tag has to be under, and the first one is the one that
 # does the work. Measured on 2026-09-18 against a throwaway repository: with
 # `deletion` and `non_fast_forward` alone, a `v*` tag can still be moved
@@ -339,6 +343,66 @@ def protect_releases(settings, platform):
                     else ""
                 ),
             )
+
+
+@rule(
+    "rules-apply",
+    "GitHub applies the rules the rulesets declare for the default branch",
+    needs=lambda settings: settings.applied_branch_rules is not None,
+)
+def rules_apply(settings, platform):
+    """The rules above read what the rulesets *say*. This reads what GitHub *does*.
+
+    Rulesets on a private repository are a GitHub Pro feature, and the
+    operator's Pro is free through a training that ends (decision 31 of
+    phase 4). Nothing documents what happens to a private repository's
+    rulesets when Pro lapses, and the likeliest failure is silent: they stay
+    listed, marked `active`, and stop refusing anything. Every rule above
+    would go on passing, because each of them reads the rulesets.
+
+    So this compares rule *types*: each one an active ruleset declares for
+    the default branch, against what GitHub reports it applies there. Types,
+    because that is what the contract requires - not ruleset names, and not
+    parameters: `required_approving_review_count` is 0 on purpose (decision
+    33), and this must not start asking for approvals. A rule missing from
+    the rulesets themselves is `protect-main`'s or `required-checks`' to
+    report, so it is not reported twice here.
+
+    **There is no such endpoint for a tag.** GitHub's REST reference has
+    rules for a branch and nothing for a tag (read 2026-10-04), and the tag
+    ruleset's own fields carry nothing about whether it applies. So the
+    default branch is the canary for both: a plan that stops applying one
+    ruleset of a repository stops applying the other, and the finding says
+    so rather than staying quiet about tags.
+    """
+    declaring = _once(
+        _active(settings, "branch", DEFAULT_BRANCH_CONDITION, EVERYTHING),
+        _active(settings, "branch", f"refs/heads/{settings.default_branch}"),
+    )
+    declared = _enforced(declaring)
+    applied = {r.get("type") for r in settings.applied_branch_rules}
+    lost = [
+        name
+        for name in APPLIED_BRANCH_RULES
+        if name in declared and name not in applied
+    ]
+    if not lost:
+        return
+    # Only the rulesets that declare something lost: naming one that GitHub
+    # still applies in full would send somebody to look at the wrong thing.
+    culprits = [rs for rs in declaring if _enforced([rs]) & set(lost)]
+    names = ", ".join(f"`{rs.get('name', '?')}`" for rs in culprits)
+    yield Finding(
+        "rules-apply",
+        f"GitHub no longer applies {', '.join(f'`{n}`' for n in lost)} to "
+        f"{settings.default_branch}, although {names} declare"
+        f"{'s' if len(culprits) == 1 else ''} "
+        f"{'it' if len(lost) == 1 else 'them'} and say `active`. This is what "
+        "a lapsed GitHub Pro is expected to look like on a private "
+        "repository: the rulesets stay listed and refuse nothing. GitHub "
+        "reports no applied rules for a tag, so the release tags are very "
+        "likely unprotected too. Check the account's plan first.",
+    )
 
 
 @rule("contract-version", "the Project pins the contract version that is current")

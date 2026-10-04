@@ -1,0 +1,5 @@
+{
+  "fires": ["rules-apply"],
+  "why": "The likeliest failure when the free GitHub Pro lapses: both rulesets stay listed and say `active`, and GitHub applies nothing from them to a private repository. Every rule reading the rulesets still passes; only what GitHub says applies to main tells the truth.",
+  "settings": { "applied_branch_rules": [] }
+}

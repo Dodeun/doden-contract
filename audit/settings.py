@@ -48,6 +48,10 @@ class Settings:
     contract_document: str | None = None
     addon_documents: dict = field(default_factory=dict)
     variables: list | None = None
+    # What GitHub says it *applies* to the default branch, as opposed to what
+    # the rulesets declare. `None` is a question nobody answered, the same as
+    # `variables`; `[]` is GitHub applying nothing at all.
+    applied_branch_rules: list | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Settings":
@@ -93,11 +97,12 @@ def _get(path: str, token: str, raw: bool = False):
         if exc.code == 404:
             return None
         detail = exc.read().decode("utf-8", "replace")[:200]
-        # 403 is "this token may not read that", which exactly one caller is
-        # allowed to treat as an unanswered question. Everything else - an
-        # expired token, a rate limit, a bad gateway - is the audit being
-        # unable to run, and is raised as such so that no rule can mistake it
-        # for a setting that is absent.
+        # 403 is "this token may not read that", which two callers - the
+        # variables and the applied rules - are allowed to treat as an
+        # unanswered question. Everything else - an expired token, a rate
+        # limit, a bad gateway - is the audit being unable to run, and is
+        # raised as such so that no rule can mistake it for a setting that is
+        # absent.
         error = NotPermitted if exc.code == 403 else AuditError
         raise error(f"GET {path} answered {exc.code}: {detail.strip()}") from exc
     except urllib.error.URLError as exc:
@@ -144,6 +149,42 @@ def fetch(repository: str, token: str) -> Settings:
         full = _get(f"/repos/{repository}/rulesets/{summary['id']}", token)
         if full is not None:
             rulesets.append(full)
+
+    # The rules GitHub applies to the default branch, from every active
+    # ruleset whatever level it was configured at, and from none in
+    # `evaluate` or `disabled`. A ruleset can say `active` and produce
+    # nothing here - which is what a private repository's rulesets are
+    # expected to do when the account's GitHub Pro lapses (decision 31 of
+    # phase 4). There is no such endpoint for a tag: read 2026-10-04 in the
+    # REST reference, and `rules/tags/...` answers 404.
+    #
+    # **Any refusal here is the audit failing, never a question left open.**
+    # Unlike the variables, this endpoint needs only Metadata: read, which
+    # every fine-grained token carries, so a 403 or a 404 is not a missing
+    # permission - and it may be exactly how a lapsed plan answers. Reported
+    # as *not checked*, it would leave the run green on the day this rule
+    # exists for. Raised, it is exit 2, which Discord hears about.
+    #
+    # One page of 100, like the variables: the platform's rulesets apply four
+    # rules, and the endpoint's default page is 30.
+    path = f"/repos/{repository}/rules/branches/{default_branch}?per_page=100"
+    try:
+        applied = _get(path, token)
+    except NotPermitted as exc:
+        raise AuditError(
+            f"{repository}: GitHub refused to say which rules apply to "
+            f"{default_branch} ({exc}). The token needs nothing beyond "
+            "Metadata: read for this, so look at the account's plan as well "
+            "as the token."
+        ) from exc
+    if not isinstance(applied, list):
+        raise AuditError(
+            f"{repository}: GET {path} answered "
+            + ("404" if applied is None else "something other than a list")
+            + ", so which rules GitHub applies is unknown. It is not reported "
+            "as conforming."
+        )
+    applied_branch_rules = applied
 
     manifest = None
     manifest_error = None
@@ -204,4 +245,5 @@ def fetch(repository: str, token: str) -> Settings:
         contract_document=document,
         addon_documents=addon_documents,
         variables=variables,
+        applied_branch_rules=applied_branch_rules,
     )

@@ -236,3 +236,19 @@ the audit could not run — no token, a Project that answers 404. A Project
 that could not be read is never reported as conforming, because an audit that
 cannot see is otherwise indistinguishable from an audit that sees nothing
 wrong.
+
+**What the rulesets say, and what GitHub applies.** Most tier-2 rules read
+the rulesets. `rules-apply` (since `v3.1.0`) reads what GitHub reports it
+*applies* to the default branch — `GET /repos/{owner}/{repo}/rules/branches/{branch}`
+— and reports each rule type an active ruleset declares that GitHub no longer
+applies. Rulesets on a private repository need GitHub Pro, and a lapsed plan
+is expected to leave them listed, marked `active`, and refusing nothing: every
+other rule would go on passing. GitHub has no such endpoint for a tag (read
+2026-10-04), so the default branch stands in for the release tags too, and
+the finding says so. If GitHub will not answer that read — a 403 or a 404 —
+the audit exits **2** rather than calling the rule unchecked: the read needs
+only `Metadata: read`, so a refusal may be the lapse itself. It compares types only, never parameters, so it asks
+for no approvals. It is a tier-2 rule and no Project's files change, so it
+shipped as a minor release and `CONTRACT.md` was left as it is: changing that
+copy would have reported every Project's copy as drifted, for a rule no
+Project can act on.

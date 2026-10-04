@@ -1,0 +1,5 @@
+{
+  "why": "Settings recorded before the audit read the applied rules. The question is left open, which is not the same as answered in the Project's favour. A live read never produces this: GitHub refusing to answer is the audit failing, exit 2.",
+  "settings": { "applied_branch_rules": null },
+  "not_checked": ["rules-apply"]
+}

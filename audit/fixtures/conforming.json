@@ -99,5 +99,31 @@
   "variables": [],
   "addon_documents": {
     "database": "the canonical database Add-on document\n"
-  }
+  },
+  "applied_branch_rules": [
+    {
+      "type": "deletion",
+      "ruleset_source_type": "Repository",
+      "ruleset_source": "Dodeun/example-project",
+      "ruleset_id": 1
+    },
+    {
+      "type": "non_fast_forward",
+      "ruleset_source_type": "Repository",
+      "ruleset_source": "Dodeun/example-project",
+      "ruleset_id": 1
+    },
+    {
+      "type": "pull_request",
+      "ruleset_source_type": "Repository",
+      "ruleset_source": "Dodeun/example-project",
+      "ruleset_id": 1
+    },
+    {
+      "type": "required_status_checks",
+      "ruleset_source_type": "Repository",
+      "ruleset_source": "Dodeun/example-project",
+      "ruleset_id": 1
+    }
+  ]
 }
