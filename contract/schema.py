@@ -138,8 +138,14 @@ def _errors(schema, value, path):
     if isinstance(value, str):
         pattern = schema.get("pattern")
         if pattern is not None and not _matches_pattern(pattern, value):
+            # A regular expression is what the schema can say, not what a
+            # person needs to read; a `title` says it in words, where one is
+            # given.
             out.append(
-                "{0} must match {1} (found {2!r})".format(where, pattern, value)
+                "{0} must match {1} (found {2!r}){3}".format(
+                    where, pattern, value,
+                    ": " + schema["title"] if "title" in schema else "",
+                )
             )
         if "minLength" in schema and len(value) < schema["minLength"]:
             if schema["minLength"] == 1:

@@ -227,9 +227,8 @@ data would upset somebody. It also moves the Project out of `lab.doden.dev`
 to a hostname of its own — the one occasion on which `appHost` changes —
 and brings what a Prototype goes without: the repository settings of
 [tier 2](#tier-2--the-repositorys-own-settings), and a place on the list the
-audit reads. Until then a Prototype is held to tier 1 alone. Its check runs
-on every push and reports without blocking, so how far it is from being
-promotable is always on the page.
+audit reads. Until then a Prototype is held to tier 1 alone, and how far it
+is from being promotable is what its tier-1 verdict says.
 
 ## What deserves a finding
 

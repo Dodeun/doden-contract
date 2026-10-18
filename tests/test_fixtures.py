@@ -276,6 +276,13 @@ class Prototypes(FixtureCase):
             names="YYYY-MM-DD",
         )
 
+    def test_an_expiry_python_would_parse_but_a_person_misreads_is_refused(self):
+        """`date.fromisoformat` takes 20261115; nobody reads it at a glance."""
+        self.assertFails(
+            "fail/prototype-expires-compact", "prototype-expires",
+            names="YYYY-MM-DD",
+        )
+
     def test_an_expiry_on_a_day_that_does_not_exist_is_refused(self):
         self.assertFails(
             "fail/prototype-expires-impossible-day", "prototype-expires",
@@ -293,10 +300,14 @@ class Prototypes(FixtureCase):
         )
 
     def test_an_access_code_with_a_misreadable_character_is_refused(self):
-        """0 and O, 1 and I and L: a code read aloud must survive it."""
+        """0 and O, 1 and I and L: a code read aloud must survive it.
+
+        Refused by the schema, so the message is the schema's - and it says
+        which characters in words, not only as a regular expression.
+        """
         self.assertFails(
             "fail/prototype-access-code-misreadable", "manifest",
-            names="accessCode",
+            names="never 0, 1, I, L or O",
         )
 
     def test_an_access_code_in_lower_case_is_refused(self):

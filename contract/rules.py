@@ -9,6 +9,7 @@ that yields nothing passed. Rules never raise for a condition they are meant
 to judge: a missing file is a violation, not a crash.
 """
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -277,7 +278,7 @@ def prototype_expires(project):
     if not EXPIRY_FORMAT.fullmatch(written):
         yield Violation(
             "prototype-expires",
-            'the Prototype\'s "expires" is "' + written + '". Write the last '
+            'the Prototype\'s "expires" is ' + json.dumps(written) + ". Write the last "
             "day it runs as YYYY-MM-DD - 2026-11-15 for the fifteenth of "
             "November - so that nobody, and nothing, reads it two ways: "
             "03/04 is March in one country and April in another.",
@@ -288,7 +289,7 @@ def prototype_expires(project):
     except ValueError:
         yield Violation(
             "prototype-expires",
-            'the Prototype\'s "expires" is ' + written + ", which is not a "
+            'the Prototype\'s "expires" is ' + json.dumps(written) + ", which is not a "
             "day on the calendar. The platform stops the Prototype at the end "
             "of that day, so it has to be one that comes.",
         )
