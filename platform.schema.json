@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Dodeun/doden-contract/v3/platform.schema.json",
   "title": "Manifest",
-  "description": "A Project's identity, and the commands the platform runs inside its images, in one committed file. The two halves have two owners: the identity - slug, appName, appHost, profile, contractVersion - is written by `project new` and never edited, because everything outside the repository was named after it; the commands, inside the Add-ons that need them, belong to the Project and change when its stack does. Read by the Project's workflows, by the contract check, and by anyone who opens it (ADR-0010).",
+  "description": "A Project's identity, and the commands the platform runs inside its images, in one committed file. The two halves have two owners: the identity - slug, appName, appHost, profile, contractVersion - is written by `project new` and never edited, because everything outside the repository was named after it; the commands, inside the Add-ons that need them, belong to the Project and change when its stack does. A Prototype also carries a `prototype` block, whose presence only a promotion removes and whose settings change by a commit. Read by the Project's workflows, by the contract check, and by anyone who opens it (ADR-0010).",
   "type": "object",
   "additionalProperties": false,
   "required": ["slug", "appName", "appHost", "profile", "addons", "contractVersion"],
@@ -89,6 +89,23 @@
         }
       },
       "description": "The optional dependencies on Shared Platform Services this Project declares (ADR-0013). Keys are the Add-ons; each value carries that Add-on's configuration, and an Add-on with nothing to configure takes an empty object. A Project with no Add-ons writes {}. Traefik and the web network are not in here: every Project depends on them and none declares them, which is what *optional* means. A capability a Project implements for itself - a login, a scraper, a third-party integration - is not an Add-on, however much code it takes and however many Projects write it."
+    },
+    "prototype": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expires"],
+      "properties": {
+        "expires": {
+          "type": "string",
+          "description": "The last day this Prototype runs, written YYYY-MM-DD: it serves until the end of that day, Paris time. A string here and a date in the `prototype-expires` rule, so that a date written another way is reported in the verdict, naming the format, rather than refused as a schema assertion. Moved by a commit."
+        },
+        "accessCode": {
+          "type": "string",
+          "pattern": "^[2-9A-HJKMNP-Z]{5}$",
+          "description": "Optional. Five capital letters and digits a visitor types to get in; without it the Prototype is public. Never 0, 1, I, L or O, which a person reading the code aloud or copying it from an e-mail confuses with each other, and never lower case, which does not survive being read aloud. Not a secret: a doorbell, not a lock, so it is committed. Changed by a commit."
+        }
+      },
+      "description": "Present only in a Prototype, and what makes it one (ADR-0015): a Project that may be thrown away, whose data nobody backs up, served under <slug>.lab.doden.dev. Its settings change by a commit like any other file. Removing the block is a promotion, not an edit."
     },
     "contractVersion": {
       "type": "string",
