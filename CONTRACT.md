@@ -83,6 +83,7 @@ rule reads it. Its schema is
 | `profile` | The Template this Project was copied from, which is what that Template decided on its behalf beyond this contract: how its images are built and its tests run, and in some Profiles a language. `base-dockerfile` decides no language. A closed list, so adding one is a version bump rather than a free-text field. |
 | `addons` | The **Add-ons** this Project declares: an object whose keys are the Add-ons and whose values carry that Add-on's configuration. Today there is one, `database`, and it carries a `provider` and the `migrate` and `seed` commands. A Project with no Add-ons writes `{}`. |
 | `contractVersion` | The major version this Project is held to. Matches the tag its workflow pins and the version this file carries. |
+| `prototype` | Present only in a **Prototype**, and what makes it one: its `expires` date, and an optional `accessCode`. See [A Prototype](#a-prototype) below. |
 
 ### Two halves, two owners
 
@@ -99,6 +100,10 @@ together with the tag its workflow calls.
 **belong to the Project**, and change whenever its stack does. Whoever
 changes how the schema is migrated changes the command in the same pull
 request.
+
+A Prototype carries a third part, the `prototype` block, which is neither:
+its presence is identity, and its settings are the Prototype's own.
+[A Prototype](#a-prototype) says how each changes.
 
 ### How the commands are run
 
@@ -169,6 +174,62 @@ repository variable is invisible to an agent that can only see the
 repository: a Project whose bundle is compiled against a hostname it never
 mentions is opaque in exactly the way this platform rules out.
 
+### A Prototype
+
+A **Prototype** is a Project whose loss would be an incident for nobody. It
+is copied from the same Template and held to the same rules as any other
+Project. Three things differ: it runs apart from the Projects that have real
+users, nothing it stores is backed up, and it may be thrown away. How long
+it lives and who may see it are its own settings, not what makes it one: a
+site left up for months for a prospect and a demo deleted the day after a
+meeting are both Prototypes.
+
+It says so in its Manifest:
+
+```json
+{
+  "slug": "example-prototype",
+  "appHost": "example-prototype.lab.doden.dev",
+  "prototype": { "expires": "2026-11-15", "accessCode": "K7M2Q" }
+}
+```
+
+(the other fields as in any Manifest, above).
+
+- **`expires`** is the last day the Prototype runs, written `YYYY-MM-DD`. It
+  runs **to the end of that day, Paris time**: `2026-11-15` serves until
+  midnight between the 15th and the 16th in Paris, and stops after that.
+  Paris, because the person who is asked, a few days before, whether to
+  keep it is there. Required, because every Prototype has a date. A date
+  that passes stops the Prototype; it does not delete it.
+- **`accessCode`**, if present, is five characters a visitor types before
+  reaching the Prototype. Without it, the Prototype is public, like any site.
+  Capital letters and digits, **never `0`, `1`, `I`, `L` or `O`**: a code is
+  read aloud in a meeting or copied from an e-mail, and those are the
+  characters that get swapped. The schema refuses them, rather than leaving
+  them to whoever generates the code, because a code can also be written by
+  hand in a commit.
+
+**The code is not a secret.** It is the room number of a showroom: needed to
+join, worthless to steal. It tells a visitor who followed a link by accident
+that this is not for them. That is why it is committed, and why anyone who
+can read the repository may read it and pass it on. A Prototype that needs
+real protection has a login of its own, or is not a Prototype.
+
+**Its settings change by a commit.** Moving the date, adding a code,
+changing it or removing it is an edit to `platform.json`, pushed like any
+other, and the deploy that follows applies it. Nothing is set anywhere else.
+
+**Removing the block is a promotion, not an edit.** The block is identity:
+it is written when the Prototype is created, and only a promotion takes it
+out. A promotion is a deliberate act, done the day losing the Prototype's
+data would upset somebody. It also moves the Project out of `lab.doden.dev`
+to a hostname of its own — the one occasion on which `appHost` changes —
+and brings what a Prototype goes without: the repository settings of
+[tier 2](#tier-2--the-repositorys-own-settings), and a place on the list the
+audit reads. Until then a Prototype is held to tier 1 alone, and how far it
+is from being promotable is what its tier-1 verdict says.
+
 ## What deserves a finding
 
 `PLATFORM-FINDINGS.md` is where a Project writes down what it learned that
@@ -216,6 +277,33 @@ This is a rule rather than a closed list in the schema on purpose. Which
 providers exist is policy that changes when an ADR changes, and it belongs
 where it can be *reported* — in this verdict, naming what is supported —
 rather than one layer earlier, as a Manifest that failed an assertion.
+
+### `prototype-host` — a Prototype is served at `<slug>.lab.doden.dev`, and only a Prototype is
+
+A Manifest with a `prototype` block has an `appHost` of exactly its slug
+followed by `.lab.doden.dev`. A Manifest without one has an `appHost`
+outside `lab.doden.dev`.
+
+The hostname is what sends a visitor to where a Prototype runs, so it is
+derived from the slug like every other name. The second direction catches a
+half-done promotion: a Manifest that dropped the block, and so no longer
+says it can be thrown away, while still being served from where nothing is
+backed up.
+
+### `prototype-expires` — a Prototype's expiry is a real day, written `YYYY-MM-DD`
+
+`03/04/2026` is March in one country and April in another, and the platform
+acts on this date, so there is one way to write it. `2026-02-30` is written
+that way and is still refused.
+
+**The date is never compared with today.** A Prototype past its date passes
+this rule. The same commit gets the same verdict on any day, and a Prototype
+past its date is stopped by the platform rather than refused by its own
+check, which would fail the very push that moves the date.
+
+A rule rather than a pattern in the schema, for the reason `addon-provider`
+is one: so that a date written the wrong way is reported here, saying how
+to write it.
 
 ### `platform-findings` — `PLATFORM-FINDINGS.md` exists
 

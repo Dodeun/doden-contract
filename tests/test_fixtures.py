@@ -227,6 +227,97 @@ class Addons(FixtureCase):
         )
 
 
+class Prototypes(FixtureCase):
+    """A Prototype says what it is in its Manifest, and its host agrees.
+
+    The `prototype` block is the declaration (ADR-0015): a Project carrying it
+    is a Prototype, and only a promotion removes it. Its host is read both
+    ways, as `networks` and `database-url` are, because a declaration that can
+    disagree with where the Project is served is decorative.
+    """
+
+    def test_a_prototype_with_an_access_code_passes(self):
+        self.assertPasses("pass/prototype")
+
+    def test_a_prototype_without_an_access_code_passes(self):
+        """Public is the default: most Prototypes have no code."""
+        self.assertPasses("pass/prototype-without-access-code")
+
+    def test_a_prototype_past_its_date_still_passes(self):
+        """The verdict cannot depend on the day it is asked.
+
+        A commit that passed yesterday passes today. A Prototype whose date
+        has gone by is stopped by the platform, not refused by its own CI -
+        which would turn its next push, the one that moves the date, red.
+        """
+        self.assertPasses("pass/prototype-past-its-date")
+
+    def test_a_prototype_served_outside_the_lab_is_refused(self):
+        self.assertFails(
+            "fail/prototype-host-outside-lab", "prototype-host",
+            names="fixture-base.lab.doden.dev",
+        )
+
+    def test_a_prototype_served_under_another_slug_is_refused(self):
+        self.assertFails(
+            "fail/prototype-host-another-slug", "prototype-host",
+            names="fixture-base.lab.doden.dev",
+        )
+
+    def test_a_project_served_from_the_lab_is_refused(self):
+        """The other direction: losing the block does not make a Project."""
+        self.assertFails(
+            "fail/project-host-in-lab", "prototype-host", names="promotion",
+        )
+
+    def test_an_expiry_written_another_way_is_refused(self):
+        self.assertFails(
+            "fail/prototype-expires-not-iso", "prototype-expires",
+            names="YYYY-MM-DD",
+        )
+
+    def test_an_expiry_python_would_parse_but_a_person_misreads_is_refused(self):
+        """`date.fromisoformat` takes 20261115; nobody reads it at a glance."""
+        self.assertFails(
+            "fail/prototype-expires-compact", "prototype-expires",
+            names="YYYY-MM-DD",
+        )
+
+    def test_an_expiry_on_a_day_that_does_not_exist_is_refused(self):
+        self.assertFails(
+            "fail/prototype-expires-impossible-day", "prototype-expires",
+            names="2026-02-30",
+        )
+
+    def test_a_prototype_with_no_expiry_is_refused(self):
+        self.assertFails(
+            "fail/prototype-no-expires", "manifest", names='"expires"',
+        )
+
+    def test_an_access_code_of_the_wrong_length_is_refused(self):
+        self.assertFails(
+            "fail/prototype-access-code-length", "manifest", names="accessCode",
+        )
+
+    def test_an_access_code_with_a_misreadable_character_is_refused(self):
+        """0 and O, 1 and I and L: a code read aloud must survive it.
+
+        Refused by the schema, so the message is the schema's - and it says
+        which characters in words, not only as a regular expression.
+        """
+        self.assertFails(
+            "fail/prototype-access-code-misreadable", "manifest",
+            names="never 0, 1, I, L or O",
+        )
+
+    def test_an_access_code_in_lower_case_is_refused(self):
+        """Case does not survive being read aloud either."""
+        self.assertFails(
+            "fail/prototype-access-code-lower-case", "manifest",
+            names="accessCode",
+        )
+
+
 class TheChannelBackToThePlatform(FixtureCase):
     def test_a_project_carrying_no_findings_file_is_refused(self):
         self.assertFails(

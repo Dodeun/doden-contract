@@ -261,6 +261,15 @@ class Project:
         """
         return dict(self.manifest.get("addons", {})) if self.manifest else None
 
+    @property
+    def prototype(self):
+        """The `prototype` block, or `None` - for a Project, and when unread.
+
+        A rule that reads both directions has to tell the two `None`s apart
+        by asking `manifest` first, as the Add-on rules do.
+        """
+        return self.manifest.get("prototype") if self.manifest else None
+
     def has_addon(self, name):
         addons = self.addons
         return addons is not None and name in addons

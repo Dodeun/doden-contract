@@ -54,3 +54,7 @@ Some fixtures exist to demonstrate something beyond their own rule:
 | `fail/manifest-oauth-addon` | The Add-on that was deleted rather than implemented. Its absence is the surprising part, so the message says why (ADR-0013) instead of reporting an unknown key. |
 | `fail/addon-provider` | An engine the platform does not run. Refused by a rule rather than by the schema, so that the list of what *is* run has one home and can be reported beside every other verdict. |
 | `fail/platform-findings-missing` | The one-way channel out of a Project. Its message may not name where the findings go — a test asserts that — because a Project never needs to know this repository exists. |
+| `pass/prototype-past-its-date` | A Prototype whose date went by years ago, and passes. The verdict on a commit cannot change overnight, and a check that refused it would turn red the push that moves its date. |
+| `fail/project-host-in-lab` | The `prototype` block gone and the lab hostname kept: a promotion done halfway. `prototype-host` reads both ways for this one. |
+| `fail/prototype-expires-impossible-day` | `2026-02-30`, written in the right format and on no calendar. Why the date is a rule that parses rather than a pattern in the schema. |
+| `fail/prototype-access-code-misreadable` | A code with `0` and `1` in it. Refused by the schema, not left to whatever generates codes, because a code can be written by hand in a commit. |

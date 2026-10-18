@@ -9,8 +9,10 @@ that yields nothing passed. Rules never raise for a condition they are meant
 to judge: a missing file is a violation, not a crash.
 """
 
+import json
 import re
 from dataclasses import dataclass
+from datetime import date
 
 from . import compose
 from .project import CONTRACT_DOC
@@ -28,7 +30,7 @@ REQUIRE_ERROR_FORM = ("PROJECT_SLUG", "IMAGE_TAG")
 # it.** The Manifest's `provider` is a string of the right shape; which
 # strings the platform can honour is policy, it changes when an ADR changes,
 # and it belongs where it can be *reported* - in the same verdict as the
-# other eighteen rules, naming what is supported. An enum in the schema would
+# other twenty rules, naming what is supported. An enum in the schema would
 # refuse the same Manifest one layer earlier, as `manifest`, with a message
 # about a failed assertion and no way for the `addon-provider` rule ever to
 # fire - a rule whose failing case cannot be constructed is a rule that has
@@ -56,6 +58,14 @@ CLAUDE_DOCS = (("CLAUDE.md", "AGENTS.md"), (".claude/CLAUDE.md", "../AGENTS.md")
 
 # The commands an Add-on carries, each run in a Service the Manifest names.
 COMMANDS = {"database": ("migrate", "seed")}
+
+# Where Prototypes are served, each at <slug> under it, and nothing else is.
+LAB_DOMAIN = "lab.doden.dev"
+
+# How an expiry date is written. Checked before parsing, because Python's
+# `date.fromisoformat` also accepts `20261115` and `2026-W46-7`, and a date a
+# person cannot read at a glance is not one they will notice is wrong.
+EXPIRY_FORMAT = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 @dataclass(frozen=True)
@@ -186,6 +196,102 @@ def addon_provider(project):
             + ", ".join(supported) + ". An Add-on is a dependency on a service "
             "the platform operates, so a provider nothing answers for is a "
             "Project that would deploy and then fail to connect to anything.",
+        )
+
+
+@rule(
+    "prototype-host",
+    "a Prototype is served at <slug>." + LAB_DOMAIN + ", and only a Prototype is",
+)
+def prototype_host(project):
+    """The declaration and the hostname say the same thing, both ways.
+
+    A Prototype runs where losing it costs nobody anything, and its hostname
+    is what routes a visitor there: `<slug>.lab.doden.dev`, derived from the
+    slug as every other name is. A Prototype named like a Project would be
+    looked for where Projects run.
+
+    The other direction is the one that matters later. Removing the block is
+    a promotion (ADR-0015), and a promoted Project leaves the lab for a
+    hostname of its own. A Manifest that dropped the block and kept the lab
+    hostname has half-promoted itself: it no longer says it is disposable,
+    and it is still served from the machine where nothing is backed up.
+
+    A rule rather than a schema `if`/`then`, because the expected host is
+    built from the slug - a comparison between two fields, which a pattern
+    cannot express - and because the failing example has to be a Manifest the
+    schema accepts, or this rule never runs.
+    """
+    if project.manifest is None:
+        return  # the Manifest rule already said so
+
+    host = project.manifest["appHost"]
+    expected = project.slug + "." + LAB_DOMAIN
+    if project.prototype is not None:
+        if host != expected:
+            yield Violation(
+                "prototype-host",
+                'platform.json declares a "prototype" block, so this is a '
+                'Prototype, and its appHost is "' + host + '". A Prototype is '
+                'served at its slug under ' + LAB_DOMAIN + ': "' + expected
+                + '". The hostname is part of its identity, written when it '
+                "was created, so a different one means it was created wrong, "
+                "or the block was added to a Project, which is not how a "
+                "Project becomes a Prototype.",
+            )
+    elif host == LAB_DOMAIN or host.endswith("." + LAB_DOMAIN):
+        yield Violation(
+            "prototype-host",
+            'appHost "' + host + '" is under ' + LAB_DOMAIN + ", where only "
+            'Prototypes are served, and platform.json declares no "prototype" '
+            "block. If this is a Prototype, the block is missing: add it, "
+            "with an expiry date. If the block was removed, that was a "
+            "promotion, and a promotion also gives the Project a hostname "
+            "outside " + LAB_DOMAIN + ".",
+        )
+
+
+@rule("prototype-expires", "a Prototype's expiry is a real day, written YYYY-MM-DD")
+def prototype_expires(project):
+    """The date the platform acts on, so it has to be one it cannot misread.
+
+    `03/04/2026` is March in one country and April in another, so there is
+    one way to write it. It is the last day the Prototype runs, to the end of
+    that day in Paris, which is where the person who answers the expiry
+    question lives.
+
+    Never compared with today. A checker whose verdict on the same commit
+    changes overnight is a checker nobody can reproduce, and a Prototype past
+    its date is stopped by the platform, not refused by its own CI - which
+    would turn red the very push that moves its date.
+
+    A rule and not a schema `pattern`, for the reason `addon-provider` is
+    one: a format the schema refused would arrive as an assertion about a
+    regular expression, one layer before this verdict, and 2026-02-30 fits any
+    pattern simple enough to read.
+    """
+    block = project.prototype
+    if block is None:
+        return
+
+    written = block["expires"]
+    if not EXPIRY_FORMAT.fullmatch(written):
+        yield Violation(
+            "prototype-expires",
+            'the Prototype\'s "expires" is ' + json.dumps(written) + ". Write the last "
+            "day it runs as YYYY-MM-DD - 2026-11-15 for the fifteenth of "
+            "November - so that nobody, and nothing, reads it two ways: "
+            "03/04 is March in one country and April in another.",
+        )
+        return
+    try:
+        date.fromisoformat(written)
+    except ValueError:
+        yield Violation(
+            "prototype-expires",
+            'the Prototype\'s "expires" is ' + json.dumps(written) + ", which is not a "
+            "day on the calendar. The platform stops the Prototype at the end "
+            "of that day, so it has to be one that comes.",
         )
 
 

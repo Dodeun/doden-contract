@@ -203,6 +203,13 @@ the `@v2` in their workflow and the `contractVersion` in their Manifest —
 nothing starts failing on its own, and the major they are leaving stays where
 it is so that leaving it stays their decision.
 
+**`v3.3.0` is a minor on purpose.** Its `prototype-host` rule refuses a
+Project served under `lab.doden.dev` without a `prototype` block, which no
+earlier `v3` refused. On 2026-10-18 no Project was served there, and
+`20min-tracker` and `jobs-finder` were run through it and passed, so it
+newly refused nothing that passed. The test is the Projects that exist, not
+the ones that could.
+
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned
 *version*, not the text, so a prose fix cannot refuse every Project at once —
