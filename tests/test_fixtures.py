@@ -504,9 +504,22 @@ class RoutingAndNetworks(FixtureCase):
             "fail/network-web-not-external", "networks", names="external",
         )
 
-    def test_a_service_that_does_not_join_web_is_refused(self):
+    def test_a_routed_service_that_does_not_join_web_is_refused(self):
         self.assertFails(
             "fail/network-web-not-joined", "networks", names="frontend",
+        )
+
+    def test_a_backend_off_web_on_the_stacks_own_network_passes(self):
+        self.assertPasses("pass/stack-network")
+
+    def test_a_network_of_the_stacks_own_made_external_is_refused(self):
+        self.assertFails(
+            "fail/network-own-external", "networks", names="another",
+        )
+
+    def test_a_network_of_the_stacks_own_given_a_name_is_refused(self):
+        self.assertFails(
+            "fail/network-own-named", "networks", names="shared",
         )
 
     def test_joining_data_without_the_database_addon_is_refused(self):

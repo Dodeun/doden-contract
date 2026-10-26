@@ -610,16 +610,36 @@ def _traefik_component(key):
     return parts[3]
 
 
-@rule("networks", "the Stack joins web, and joins data only with the database Add-on", needs_render=True)
+def _routed(labels):
+    """Whether Traefik is asked to route to a service, by either half of the asking."""
+    return labels.get("traefik.enable") == "true" or any(
+        key.startswith("traefik.http.") for key in labels
+    )
+
+
+@rule(
+    "networks",
+    "routed services join web, data only with the database Add-on, and any other network is the Stack's own",
+    needs_render=True,
+)
 def networks(project):
-    """Both networks are the platform's, and neither is the Project's to create.
+    """`web` and `data` are the platform's; any other network is the Stack's alone.
 
     `web` is where Traefik routes. `data` is where the shared Postgres is,
     and it is a second network rather than one because every Project's
     frontend sits on `web` and a database server does not belong within reach
     of all of them (ADR-0005).
+
+    Only a service Traefik routes to has to be on `web` (v3.4.0). A backend
+    the frontend calls can stay off it, on a network of the Stack's own: on
+    `web`, a service's name answers for every Stack that joins it, so two
+    Projects with a service called `api` would each reach the other's
+    sometimes. Compose names a network of the Stack's own after the Stack,
+    so no other Stack is on it - unless the file names it, or makes it
+    external, which is how a Stack would join another's.
     """
-    declared = (project.rendered or {}).get("networks") or {}
+    rendered = project.rendered or {}
+    declared = rendered.get("networks") or {}
 
     for name in ("web", "data"):
         if name in declared and not declared[name].get("external"):
@@ -628,6 +648,26 @@ def networks(project):
                 "the " + name + " network is not declared external: true, so "
                 "Compose creates a network of its own with that name. The "
                 "platform owns both networks; a Stack joins them.",
+            )
+
+    stack = rendered.get("name") or ""
+    for name, definition in sorted(declared.items()):
+        if name in ("web", "data"):
+            continue
+        if definition.get("external"):
+            yield Violation(
+                "networks",
+                "the network " + name + " is external, so it is another "
+                "Stack's. A Stack joins web and data, and makes any other "
+                "network itself.",
+            )
+        elif definition.get("name") != stack + "_" + name:
+            yield Violation(
+                "networks",
+                "the network " + name + " is given the name "
+                + str(definition.get("name")) + ". Leave it unnamed: Compose "
+                "names it after the Stack, and a name written in the file is "
+                "the same network for every Stack that copies it.",
             )
 
     if "web" not in declared:
@@ -639,10 +679,11 @@ def networks(project):
     else:
         for name, definition in project.services:
             joined = definition.get("networks") or {}
-            if "web" not in joined:
+            if _routed(compose.labels(definition)) and "web" not in joined:
                 yield Violation(
                     "networks",
-                    "service " + name + " does not join the web network.",
+                    "service " + name + " is routed by Traefik but does not "
+                    "join the web network, where Traefik reaches it.",
                 )
 
     if project.manifest is None:

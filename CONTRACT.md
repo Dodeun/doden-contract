@@ -416,7 +416,7 @@ with it. A derived name moves; a typed one does not. A literal name is a
 collision waiting for the second Project that copies the file, and two
 routers of one name is one Project answering for another.
 
-### `networks` — `web` always, `data` only with the database Add-on
+### `networks` — routed services on `web`, `data` only with the database Add-on, any other network the Stack's own
 
 Both networks are created by the platform and joined by a Stack, never
 created by one: a `web` that is not `external: true` is a network of the
@@ -426,6 +426,32 @@ Project's own that Traefik is not on, and the Stack comes up unreachable.
 Project's frontend sits on it — and a database server does not belong within
 reach of all of them. A Stack reaches the shared Postgres because its
 Manifest declares a database, or it does not reach it at all.
+
+Every service Traefik routes to joins `web`. A service it does not route to,
+such as a backend only the frontend calls, need not, and is better off it:
+on `web`, a service's name answers for every Stack that joins it, so two
+Projects that both have an `api` would each reach the other's some of the
+time. Such a backend joins a network of the Stack's own, shared with the
+frontend, and `data` if it reads the database:
+
+```yaml
+services:
+  frontend:   # routed by Traefik, calls http://backend:3000
+    networks: [web, app]
+  backend:    # not routed
+    networks: [app, data]
+networks:
+  web:
+    external: true
+  data:
+    external: true
+  app: {}
+```
+
+A network of the Stack's own is declared without a `name` and is not
+external. Compose then names it after the Stack, so no other Stack is on it.
+A name written in the file is one network for every Stack that copies the
+file, and an external network is another Stack's.
 
 ### `database-url` — the Stack is handed `DATABASE_URL` exactly when it declares a database
 

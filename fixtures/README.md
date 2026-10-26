@@ -43,6 +43,8 @@ Some fixtures exist to demonstrate something beyond their own rule:
 | `fail/image-tag-floating` | A tag that is not `latest` and still floats. A denylist of obvious names lets `v1` through - and this contract's own release process moves `v1`. |
 | `fail/healthcheck-disabled` | `disable: true` reads as configuration rather than as removal, which is what makes it the realistic evasion. |
 | `fail/network-data-missing` | The Add-on declared and the network absent. The `networks` rule reads both ways, so it needs a fixture in both. |
+| `pass/stack-network` | A backend Traefik does not route to, off `web`: on a network of the Stack's own with the frontend, and on `data`. Where a second Service belongs, so its name answers for this Stack alone. |
+| `fail/network-own-named` and `fail/network-own-external` | The same network named in the file, or made external: both are how a Stack would end up on another's. The rendered name is held to `<Stack>_<key>`, which only an unnamed network gets. |
 | `fail/database-url-missing` and `fail/database-url-undeclared` | The same pair for the other half of the Add-on. An Add-on that can be half-applied is an Add-on whose declaration is decorative. |
 | `fail/manifest-v2-shape` | The same for `v2`: a top-level `seedCommand`, which moved into the database Add-on with a Service to run in and a new `migrate` beside it. Recognised by that key, and answered with the new shape instead of "not a field of the Manifest". |
 | `fail/addon-command-service-missing` | A `migrate` naming a Service the Stack does not have. The deploy would find out after pulling the release; this finds out on the pull request. |
