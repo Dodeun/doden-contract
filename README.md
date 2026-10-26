@@ -210,6 +210,13 @@ earlier `v3` refused. On 2026-10-18 no Project was served there, and
 newly refused nothing that passed. The test is the Projects that exist, not
 the ones that could.
 
+**`v3.4.0` is a minor for the same reason.** Its `networks` rule lets a
+service Traefik does not route to stay off `web`, which loosens, and refuses
+a network other than `web` and `data` that is external or named in the
+file, which no earlier `v3` refused. On 2026-10-26 no Project declared any
+other network - `20min-tracker`, `jobs-finder` and both trial Prototypes
+join `web` and `data` alone - so it newly refused nothing that passed.
+
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned
 *version*, not the text, so a prose fix cannot refuse every Project at once —

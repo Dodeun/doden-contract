@@ -1,0 +1,51 @@
+# The backend off web: Traefik does not route to it, the frontend reaches it
+# on a network of the Stack's own, and it reaches the database on data. No
+# other Stack is on `app`, so `backend` answers for this Stack alone.
+name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
+
+services:
+  backend:
+    image: ${IMAGE_REPO_PREFIX}-backend:${IMAGE_TAG:?IMAGE_TAG is not set}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_BASE_URL: https://${APP_HOST}/api
+      DATABASE_URL:
+    networks:
+      - app
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:4000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    image: ${IMAGE_REPO_PREFIX}-frontend:${IMAGE_TAG:?IMAGE_TAG is not set}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - web
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      - traefik.http.routers.${PROJECT_SLUG:?}.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.${PROJECT_SLUG:?}.entrypoints=websecure
+      - traefik.http.routers.${PROJECT_SLUG:?}.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      - traefik.http.services.${PROJECT_SLUG:?}.loadbalancer.server.port=80
+
+networks:
+  web:
+    external: true
+  data:
+    external: true
+  app: {}
