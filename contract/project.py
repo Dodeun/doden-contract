@@ -113,6 +113,12 @@ class Project:
             )
             if others.returncode == 0:
                 self.untracked = {name for name in others.stdout.split("\0") if name}
+            else:
+                self.note(
+                    "git could not list the files it does not track yet, so "
+                    "the checker read the committed ones alone: a file not "
+                    "added yet was not judged."
+                )
             return sorted(set(tracked) | self.untracked)
 
         self.tracked_by_git = False

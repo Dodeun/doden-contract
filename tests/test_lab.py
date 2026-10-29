@@ -27,13 +27,13 @@ from test_fixtures import PROTOTYPE, ROOT, check, merge  # noqa: E402
 sys.path.insert(0, str(ROOT))
 
 TABLE = ROOT / "docs" / "lab.md"
-S = "${PROJECT_SLUG:?}"
+SLUG = "${PROJECT_SLUG:?}"
 IMAGE = "${IMAGE_REPO_PREFIX}-%s:${IMAGE_TAG:?IMAGE_TAG is not set}"
 HEALTHCHECK = {"test": ["CMD-SHELL", "true"], "interval": "10s"}
 
 
 def stack():
-    """pass/prototype's Stack, as a dictionary to change."""
+    """A Stack like pass/prototype's, as a dictionary to change; it passes, as that one does."""
     return {
         "name": "${PROJECT_SLUG:?PROJECT_SLUG is not set}",
         "services": {
@@ -46,12 +46,12 @@ def stack():
                 "labels": {
                     "traefik.enable": "true",
                     "traefik.docker.network": "web",
-                    "traefik.http.routers.%s_api.rule" % S: "Host(`${APP_HOST}`) && PathPrefix(`/api`)",
-                    "traefik.http.routers.%s_api.entrypoints" % S: "websecure",
-                    "traefik.http.routers.%s_api.tls.certresolver" % S: "letsencrypt",
-                    "traefik.http.routers.%s_api.middlewares" % S: "%s_api_strip" % S,
-                    "traefik.http.middlewares.%s_api_strip.stripprefix.prefixes" % S: "/api",
-                    "traefik.http.services.%s_api.loadbalancer.server.port" % S: "4000",
+                    "traefik.http.routers.%s_api.rule" % SLUG: "Host(`${APP_HOST}`) && PathPrefix(`/api`)",
+                    "traefik.http.routers.%s_api.entrypoints" % SLUG: "websecure",
+                    "traefik.http.routers.%s_api.tls.certresolver" % SLUG: "letsencrypt",
+                    "traefik.http.routers.%s_api.middlewares" % SLUG: "%s_api_strip" % SLUG,
+                    "traefik.http.middlewares.%s_api_strip.stripprefix.prefixes" % SLUG: "/api",
+                    "traefik.http.services.%s_api.loadbalancer.server.port" % SLUG: "4000",
                 },
             },
             "frontend": {
@@ -63,10 +63,10 @@ def stack():
                 "labels": {
                     "traefik.enable": "true",
                     "traefik.docker.network": "web",
-                    "traefik.http.routers.%s.rule" % S: "Host(`${APP_HOST}`)",
-                    "traefik.http.routers.%s.entrypoints" % S: "websecure",
-                    "traefik.http.routers.%s.tls.certresolver" % S: "letsencrypt",
-                    "traefik.http.services.%s.loadbalancer.server.port" % S: "80",
+                    "traefik.http.routers.%s.rule" % SLUG: "Host(`${APP_HOST}`)",
+                    "traefik.http.routers.%s.entrypoints" % SLUG: "websecure",
+                    "traefik.http.routers.%s.tls.certresolver" % SLUG: "letsencrypt",
+                    "traefik.http.services.%s.loadbalancer.server.port" % SLUG: "80",
                 },
             },
         },
@@ -111,7 +111,7 @@ def volume(definition):
 
 def label(key, value, service=front_labels):
     def add(c):
-        service(c)[key % {"s": S}] = value
+        service(c)[key % {"s": SLUG}] = value
     return add
 
 
@@ -124,9 +124,11 @@ def without_database_addon(manifest):
 
 
 class Case:
-    def __init__(self, rules, names, change=None, manifest=None, files=None):
+    """A row's Prototype: the rules it fires, space-separated, and words its messages say."""
+
+    def __init__(self, rules, says, change=None, manifest=None, files=None):
         self.rules = sorted(rules.split())
-        self.names = names
+        self.says = says
         self.change = change
         self.manifest = manifest
         self.files = files or {}
@@ -161,6 +163,14 @@ def include(tree):
     return "include:\n  - extra.yml\n" + source
 
 
+def extends(tree):
+    """The fixture's YAML, its backend extending a service of another file."""
+    source = (tree / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    return source.replace(
+        "  backend:\n", "  backend:\n    extends:\n      file: common.yml\n      service: base\n", 1
+    )
+
+
 def env_file(tree):
     """The fixture's YAML, with an env_file: the key the render erases."""
     source = (tree / "docker-compose.prod.yml").read_text(encoding="utf-8")
@@ -176,11 +186,19 @@ CASES = {
         manifest=without_database_addon,
     ),
     "F4": Case(
-        "lab-file", "includes other files",
+        "lab-file", "by include or by extends",
         files={"docker-compose.prod.yml": include, "extra.yml": "volumes:\n  extra: {}\n"},
     ),
+    "F5": Case(
+        "lab-file", "the name of one of the control host's own containers",
+        manifest=lambda m: m.update(slug="hello", appHost="hello.lab.doden.dev"),
+    ),
+    "F6": Case(
+        "lab-file", "by include or by extends",
+        files={"docker-compose.prod.yml": extends, "common.yml": "services:\n  base:\n    restart: always\n"},
+    ),
     "N1": Case("networks", "another Stack's", joins("other", {"external": True})),
-    "N2": Case("lab-networks", "web is named web", lambda c: c["networks"]["web"].update(name="other-web")),
+    "N2": Case("lab-networks", "leave web and data unnamed", lambda c: c["networks"]["web"].update(name="other-web")),
     "N3": Case("networks", "Leave it unnamed", joins("app", {"name": "app"})),
     "N4": Case("networks", '"database" Add-on', no_database, manifest=without_database_addon),
     "N5": Case("lab-networks", "sets driver", joins("app", {"driver": "bridge"})),
@@ -215,11 +233,13 @@ CASES = {
     "L1": Case("lab-labels", "belongs to Docker Compose", label("com.docker.compose.project", "another")),
     "L2": Case("lab-labels", "traefik.enable is yes", worker(labels={"traefik.enable": "yes"})),
     "L3": Case("traefik-labels", "traefik.docker.network=web", label("traefik.docker.network", "data")),
+    "L3b": Case("lab-labels", "Traefik reaches a Prototype on web", label("Traefik.Docker.Network", "data")),
     "L4": Case("lab-labels", "Traefik reaches a Prototype on web", worker(labels={"traefik.docker.network": "other"})),
     "L5": Case("lab-labels", "lower case", label("traefik.http.routers.%(s)s.Priority", "5")),
     "L6": Case("lab-labels", "is not a router's", label("traefik.http.routers.%(s)s", "x")),
     "L7": Case("lab-labels", "not named after the slug", label("traefik.http.routers.%(s)s-api.rule", "Host(`${APP_HOST}`)")),
     "L8": Case("traefik-names", "as a literal", label("traefik.http.routers.literal.rule", "Host(`${APP_HOST}`)")),
+    "L8b": Case("lab-labels", "not named after the slug", label("Traefik.http.middlewares.literal.headers.customresponseheaders.X", "y")),
     "L9": Case("lab-labels", "Host(`${APP_HOST}`)", label("traefik.http.routers.%(s)s.rule", "Host(`another.lab.doden.dev`)")),
     "L10": Case("lab-labels", "entrypoints", label("traefik.http.routers.%(s)s.entrypoints", "websecure,admin")),
     "L11": Case("lab-labels", "which is not its own", label("traefik.http.routers.%(s)s.middlewares", "access-code@file")),
@@ -247,7 +267,7 @@ def table():
     known = {fn.rule_id for fn in RULES}
     rows = {}
     for line in TABLE.read_text(encoding="utf-8").splitlines():
-        found = re.match(r"^\| ([FNVSL][0-9]+) \|.*\| (.+) \|$", line)
+        found = re.match(r"^\| ([FNVSL][0-9]+[a-z]?) \|.*\| (.+) \|$", line)
         if found:
             named = found.group(2).split(":", 1)[0]
             rows[found.group(1)] = sorted(t for t in re.findall(r"`([a-z0-9-]+)`", named) if t in known)
@@ -269,7 +289,7 @@ class TheLabsRefusals(unittest.TestCase):
                 fired = sorted({v["rule"] for v in result["violations"]})
                 self.assertEqual(case.rules, fired, result["violations"])
                 messages = " ".join(v["message"] for v in result["violations"])
-                self.assertIn(case.names, messages)
+                self.assertIn(case.says, messages)
 
     def test_the_stack_the_cases_change_passes(self):
         tree = Case("", "", change=lambda c: None).tree()

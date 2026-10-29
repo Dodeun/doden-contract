@@ -38,13 +38,15 @@ lab rules see it.
 | F2 | a `name` that is not the slug | `lab-file` |
 | F3 | a file with no service | `lab-file`, and `networks`, since nothing joins `web` |
 | F4 | `include`: the policy never sees it, because the render folds the files in, or fails on the lab, which renders the file alone | `lab-file`, from the source |
+| F5 | `lab-deploy.sh`, not the policy: a slug that is the name of one of the host's own containers | `lab-file`, from the Manifest |
+| F6 | `extends` naming another file, as F4 | `lab-file`, from the source |
 
 ## Networks
 
 | Row | `compose-policy.jq` refuses | `check.py` |
 | --- | --- | --- |
 | N1 | an external network that is not `web`, `data` or `lab-data` | `networks` |
-| N2 | `web` or `data`, external, named otherwise | `lab-networks`: `networks` reads the key, the lab the name |
+| N2 | `web` or `data`, external, named neither `web`, `data` nor `lab-data` | `lab-networks`: `networks` reads the key, the lab the name |
 | N3 | a network of the Stack's own given a name | `networks` |
 | N4 | `data` without the database Add-on | `networks` |
 | N5 | a key other than `name`, `external`, `ipam`, and `internal` for one of the Stack's own | `lab-networks` |
@@ -54,7 +56,7 @@ lab rules see it.
 
 | Row | `compose-policy.jq` refuses | `check.py` |
 | --- | --- | --- |
-| V1 | a key other than `name`, `labels`, `driver`, `driver_opts`, `external` | `compose-file`: Compose itself refuses to render any other |
+| V1 | a key other than `name`, `labels`, `driver`, `driver_opts`, `external` | `compose-file`: Compose itself refuses to render any other, and drops an `x-` one |
 | V2 | an external volume | `lab-volumes` |
 | V3 | `driver_opts`, which can bind a directory of the host | `lab-volumes` |
 | V4 | a driver other than `local` | `lab-volumes` |
@@ -85,11 +87,13 @@ lab rules see it.
 | L1 | a `com.docker.` label, which says whose container this is | `lab-labels` |
 | L2 | `traefik.enable` other than `true` or `false` | `lab-labels` |
 | L3 | `traefik.docker.network` other than `web`, on a routed service | `traefik-labels` |
+| L3b | the same label in another case, which the policy reads in lower case | `lab-labels` |
 | L4 | `traefik.docker.network` other than `web`, on a service with no router | `lab-labels` |
 | L5 | a router's or a Traefik service's label not in lower case | `lab-labels` |
 | L6 | `traefik.http.routers.<name>` with nothing after the name | `lab-labels` |
 | L7 | a router, Traefik service or middleware built from the slug but not named after it: `${PROJECT_SLUG}-api` | `lab-labels` |
 | L8 | the same, named by a literal | `traefik-names` |
+| L8b | a middleware's label in another case, named by a literal: `traefik-names` reads labels as written | `lab-labels` |
 | L9 | a router's rule other than `Host` of its hostname, with one `Path` or `PathPrefix` at most | `lab-labels` |
 | L10 | entrypoints other than `web` and `websecure` | `lab-labels` |
 | L11 | a router's middleware that is not its own or `noindex@file` | `lab-labels` |
@@ -114,14 +118,14 @@ lab rules see it.
 repository can show what follows from its own files:
 
 - the Manifest's slug, `prototype` block, hostname, expiry and access code:
-  `manifest`, `prototype-host`, `prototype-expires`;
+  `manifest`, `prototype-host`, `prototype-expires`, and `lab-file` for a
+  slug the host's containers have (F5);
 - the migrate command's Service: `addon-commands`;
 - a file that does not render with only the values the platform supplies:
   `compose-file`. The lab renders it with `PROJECT_SLUG`, `APP_HOST`,
   `IMAGE_REPO_PREFIX`, `IMAGE_TAG` and `RELEASE_TAG` alone, from stdin, so a
-  file next to it is not there either: an `env_file` (S5) or an `include`
-  (F4) is refused from the source. An `extends` naming another file is not
-  caught: no Template writes one, and the lab's render says why it fails.
+  file next to it is not there either: an `env_file` (S5), an `include`
+  (F4) or an `extends` naming a file (F6) is refused from the source.
 
 These refusals depend on things outside the repository:
 
@@ -143,6 +147,10 @@ current `v3`. A local run uses whatever `~/.doden-contract` holds. Until
 `v3.5.0`, CONTRACT.md cloned it **once**. `v3` moves with every release, and
 nothing updated the clone. So `habits-sillage`'s agent in round 2 ran a
 copy older than CI's, which refused what CI accepted. CONTRACT.md now
-replaces the clone on every run, which takes a second. The Template's
-`AGENTS.md` and README carry the old line. Ticket 56 updates the Template,
-and takes those two files with it.
+replaces the clone on every run, which takes a second; offline, the clone
+fails and so does the check, rather than run a copy of unknown age.
+
+The Template `prototype new` copies, `doden-template-base-dockerfile`,
+carries the old line in three places: `AGENTS.md`, `README.md`, and
+`scripts/profile-selfcheck.sh`, which defaults to `~/.doden-contract`.
+Ticket 56 updates the Template, and takes the three with it.

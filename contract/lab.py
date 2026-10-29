@@ -70,7 +70,9 @@ _RULE = re.compile(
 )
 _NAME = re.compile(r"^[a-z0-9_-]+$")
 _ROOT = re.compile(r"^(root|[+]?0+)$")
-_INCLUDE = re.compile(r"""^["']?include["']?\s*:""")
+_INCLUDE = re.compile(r"""^\s*["']?include["']?\s*:""")
+_EXTENDS = re.compile(r"""^(\s*)["']?extends["']?\s*:(.*)$""")
+_FILE_KEY = re.compile(r"""(^|[{,\s])["']?file["']?\s*:""")
 
 
 def _is_prototype(project):
@@ -121,22 +123,30 @@ def _lab(rule_id, message):
 
 @rule("lab-file", "a Prototype's Compose file has only what the lab reads", needs_render=True)
 def lab_file(project):
-    """The top of the file: its keys, its name, at least one service, nothing included.
+    """The top of the file: its keys, its name, at least one service, nothing of another file.
 
-    `include` is read from the source, as `no-env-file` reads `env_file`:
-    the render folds the included files in and erases the key. The lab
-    renders the file alone, from stdin, so it finds none of them.
+    `include`, and `extends` naming a file, are read from the source, as
+    `no-env-file` reads `env_file`: the render folds the other file in and
+    erases the key. The lab renders this file alone, from stdin, so it
+    finds no other. And the slug: lab-deploy.sh refuses one that is the name
+    of one of the host's own containers.
     """
     if not _is_prototype(project):
         return
-    for index, line in enumerate((project.compose_source or "").splitlines(), start=1):
-        if _INCLUDE.match(line):
-            yield _lab(
-                "lab-file",
-                "docker-compose.prod.yml line " + str(index) + " includes "
-                "other files. The lab renders this file alone, so it finds "
-                "none of them: write the Stack in this one file.",
-            )
+    for index in _other_files(project.compose_source or ""):
+        yield _lab(
+            "lab-file",
+            "docker-compose.prod.yml line " + str(index) + " brings in "
+            "another file, by include or by extends. The lab renders this "
+            "file alone, so it finds no other: write the Stack in this one.",
+        )
+    if project.slug in RESERVED_SERVICES:
+        yield _lab(
+            "lab-file",
+            "the slug " + project.slug + " is the name of one of the control "
+            "host's own containers, and the lab deploys no Prototype under "
+            "it. A Prototype is named otherwise.",
+        )
     rendered = project.rendered or {}
     for key in sorted(rendered):
         if key not in ALLOWED_TOP:
@@ -154,7 +164,38 @@ def lab_file(project):
             "lab deploys a Prototype as its slug alone: name: ${PROJECT_SLUG:?}.",
         )
     if not rendered.get("services"):
-        yield _lab("lab-file", "the file declares no service.")
+        yield _lab("lab-file", "the file declares no service: a Prototype runs at least one.")
+
+
+def _other_files(source):
+    """The lines that bring in another file: `include`, or `extends` with a `file`.
+
+    `extends` without one names a service of this file, which the lab's
+    render finds. A line by line reading, as `no-env-file`'s: a `file` key
+    on the `extends` line, or on a line below it indented further.
+    """
+    lines = source.splitlines()
+    for index, line in enumerate(lines, start=1):
+        if line.lstrip().startswith("#"):
+            continue
+        if _INCLUDE.match(line):
+            yield index
+            continue
+        found = _EXTENDS.match(line)
+        if found is None:
+            continue
+        indent, rest = len(found.group(1)), found.group(2)
+        if _FILE_KEY.search(rest):
+            yield index
+            continue
+        for below in lines[index:]:
+            if not below.strip() or below.lstrip().startswith("#"):
+                continue
+            if len(below) - len(below.lstrip()) <= indent:
+                break
+            if _FILE_KEY.search(below):
+                yield index
+                break
 
 
 @rule("lab-networks", "a Prototype's networks are the ones the lab lets a Stack make", needs_render=True)
@@ -162,27 +203,24 @@ def lab_networks(project):
     """What a network may set: its name, external, an empty ipam, and internal for its own.
 
     An external network under another key, and a network of the Stack's own
-    given a name, are the `networks` rule's. `web` or `data` named otherwise
-    is not, because that rule reads the key and the lab the name - and is
-    refused here even where the lab would take it, `web` named `data` with
-    the database Add-on, which is a Stack whose routed services Traefik
-    cannot reach.
+    given a name, are the `networks` rule's. `web` or `data`, external and
+    named neither web, data nor lab-data, is not, because that rule reads
+    the key and the lab the name.
     """
     if not _is_prototype(project):
         return
-    names = {"web": ("web",), "data": ("data", "lab-data")}
     for key, definition in sorted(((project.rendered or {}).get("networks") or {}).items()):
-        if key in names and definition.get("external") is True and definition.get("name") not in names[key]:
-            yield _lab(
-                "lab-networks",
-                "the network " + key + " is external and named "
-                + _show(str(definition.get("name"))) + ". The lab knows a "
-                "network by its name: web is named web, and data data.",
-            )
-            continue
         kind = _network_kind(key, definition)
         if kind is None:
-            continue  # `networks` says it: another Stack's, or named
+            if key in ("web", "data") and definition.get("external") is True:
+                yield _lab(
+                    "lab-networks",
+                    "the network " + key + " is external and named "
+                    + _show(str(definition.get("name"))) + ". The lab knows a "
+                    "network by its name: leave web and data unnamed, as "
+                    "external: true alone.",
+                )
+            continue  # otherwise `networks` says it: another Stack's, or named
         allowed = NETWORK_KEYS + (("internal",) if kind == "own" else ())
         for field in sorted(definition):
             if field not in allowed:
@@ -212,7 +250,11 @@ def lab_volumes(project):
     for key, definition in sorted(((project.rendered or {}).get("volumes") or {}).items()):
         for field in sorted(definition):
             if field not in VOLUME_KEYS:
-                yield _lab("lab-volumes", "the volume " + key + " sets " + field + ".")
+                yield _lab(
+                    "lab-volumes",
+                    "the volume " + key + " sets " + field + ": a Prototype's "
+                    "volume is declared empty, {}.",
+                )
         if definition.get("external") is True:
             yield _lab(
                 "lab-volumes",
@@ -366,9 +408,9 @@ def _label_refusals(labels):
             if value not in ("true", "false"):
                 yield "traefik.enable is " + value + ": true or false."
         elif lower == "traefik.docker.network":
-            # A routed service without web is `traefik-labels`'s to say.
-            if value != "web" and not routed:
-                yield "traefik.docker.network is " + value + ": Traefik reaches a Prototype on web."
+            # On a routed service, the label as written is `traefik-labels`'s.
+            if value != "web" and not (routed and key == lower):
+                yield "label " + key + " is " + value + ": Traefik reaches a Prototype on web."
         elif lower.startswith(("traefik.http.routers.", "traefik.http.services.")):
             if key != lower:
                 yield "label " + _show(key) + ": a router's or a service's labels are written in lower case."
@@ -377,7 +419,7 @@ def _label_refusals(labels):
             else:
                 yield from _service_label(key, value)
         elif lower.startswith("traefik.http.middlewares."):
-            yield from _middleware_label(lower)
+            yield from _middleware_label(key)
         else:
             yield ("label " + _show(key) + " is not allowed: a Prototype has "
                    "http routers, services and middlewares of its own, and "
@@ -417,10 +459,10 @@ def _router_label(key, value):
             yield "router " + _show(name) + " points at the service " + _show(value) + ", which is not its own."
     elif part == "priority":
         if not re.match(r"^[0-9]{1,6}$", value):
-            yield "router " + _show(name) + " has the priority " + value + "."
+            yield "router " + _show(name) + " has the priority " + value + ": a whole number, of six digits at most."
     elif part == "tls":
         if value != "true":
-            yield "router " + _show(name) + " has tls " + value + "."
+            yield "router " + _show(name) + " has tls " + value + ": true, or no tls label."
     elif part == "tls.certresolver":
         if value != "letsencrypt":
             yield ("router " + _show(name) + " uses the certresolver " + value
@@ -441,22 +483,25 @@ def _service_label(key, value):
         return
     if part == "loadbalancer.server.port":
         if not re.match(r"^[0-9]{1,5}$", value):
-            yield "Traefik service " + _show(name) + " has the port " + value + "."
+            yield "Traefik service " + _show(name) + " has the port " + value + ": the number the container listens on."
     elif part == "loadbalancer.server.scheme":
         if value not in ("http", "https", "h2c"):
-            yield "Traefik service " + _show(name) + " has the scheme " + value + "."
+            yield "Traefik service " + _show(name) + " has the scheme " + value + ": http, https or h2c."
     else:
         yield "label " + _show(key) + " is not allowed on the lab."
 
 
-def _middleware_label(lower):
-    found = _MIDDLEWARE.match(lower)
+def _middleware_label(key):
+    """Read in lower case, as the policy reads it: its labels' case is free."""
+    found = _MIDDLEWARE.match(key.lower())
     if found is None:
-        yield "label " + _show(lower) + " is not a middleware's."
+        yield "label " + _show(key) + " is not a middleware's."
         return
     name, kind = found.groups()
     if not _own(name):
-        if _derived(name):
+        # A literal is `traefik-names`'s, which reads the label as written:
+        # one it cannot read, in another case, is said here.
+        if _derived(name) or not key.startswith("traefik.http.middlewares."):
             yield _not_own("middleware", name)
         return
     if kind not in MIDDLEWARE_TYPES:

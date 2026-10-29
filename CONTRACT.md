@@ -48,7 +48,8 @@ python3 ~/.doden-contract/check.py .
 
 Both lines, every time. `v3` moves with every release, and a clone made once
 stays where it was: it refuses what CI accepts, or accepts what CI refuses.
-The clone takes a second.
+The clone takes a second. Offline, it fails, and so does the check, rather
+than run a copy of unknown age.
 
 It judges the files git tracks and the files it would add, the ones not
 tracked yet and not ignored. So a run before a commit judges the repository
@@ -530,8 +531,10 @@ the same list, read from the same render, so a Prototype learns it on its
 pull request and not on its first deploy:
 
 - **the file:** a `name` that is the slug, and no top-level key besides
-  `services`, `networks`, `volumes`. An `x-` extension counts as a key;
-- **networks:** `web` named `web`, `data` named `data`, and networks of the
+  `services`, `networks`, `volumes`. An `x-` extension counts as a key.
+  Nothing from another file, by `include` or `extends`: the lab renders this
+  one alone. A slug that is not one of the host's containers;
+- **networks:** `web` and `data`, external and unnamed, and networks of the
   Stack's own, with nothing but `internal` set;
 - **volumes:** the Stack's own, unnamed, on the `local` driver, with no
   options and nothing external;
