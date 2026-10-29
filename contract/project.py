@@ -48,6 +48,7 @@ class Project:
 
         self._files = None
         self.tracked_by_git = None
+        self.untracked = set()
 
         self.compose_source = None
         self.rendered = None
@@ -76,13 +77,16 @@ class Project:
 
     @property
     def files(self):
-        """Repository-relative paths, tracked by git where git can say.
+        """Repository-relative paths, as the next commit would hold them, where git can say.
 
-        "Committed" is a question about the index, not about the directory:
-        a developer's own .env is correctly ignored and must never fail
-        anybody's check. Where there is no repository - a fixture, an export -
-        the filesystem is all there is, and the checker says so rather than
-        reporting that it found nothing.
+        "Committed" is a question about git, not about the directory: a
+        developer's own .env is correctly ignored and must never fail
+        anybody's check. So: the files git tracks, and the ones it does not
+        track yet and does not ignore (ticket 57), which `git add -A` would
+        add - a run before the first commit judges the repository about to be
+        pushed, not an empty one. `untracked` names the second kind. Where
+        there is no repository - an export - the filesystem is all there is,
+        and the checker says so rather than reporting that it found nothing.
         """
         if self._files is None:
             self._files = self._list_files()
@@ -100,7 +104,16 @@ class Project:
             proc = None
         if proc is not None and proc.returncode == 0:
             self.tracked_by_git = True
-            return [name for name in proc.stdout.split("\0") if name]
+            tracked = [name for name in proc.stdout.split("\0") if name]
+            others = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+                cwd=str(self.tree),
+                capture_output=True,
+                text=True,
+            )
+            if others.returncode == 0:
+                self.untracked = {name for name in others.stdout.split("\0") if name}
+            return sorted(set(tracked) | self.untracked)
 
         self.tracked_by_git = False
         self.note(

@@ -42,9 +42,17 @@ jobs:
 **From a working tree**, by a human or by an agent:
 
 ```sh
-git clone --depth 1 -b v3 https://github.com/Dodeun/doden-contract ~/.doden-contract   # once
-python3 ~/.doden-contract/check.py .                                                   # per run
+rm -rf ~/.doden-contract && git clone -q --depth 1 -b v3 https://github.com/Dodeun/doden-contract ~/.doden-contract
+python3 ~/.doden-contract/check.py .
 ```
+
+Both lines, every time. `v3` moves with every release, and a clone made once
+stays where it was: it refuses what CI accepts, or accepts what CI refuses.
+The clone takes a second.
+
+It judges the files git tracks and the files it would add, the ones not
+tracked yet and not ignored. So a run before a commit judges the repository
+that commit makes.
 
 Python 3 and Docker Compose are all it needs. The checker has no third-party
 dependency, on purpose: it is pinned by a tag and nothing updates it, so it
@@ -178,7 +186,7 @@ mentions is opaque in exactly the way this platform rules out.
 
 A **Prototype** is a Project whose loss would be an incident for nobody. It
 is copied from the same Template and held to the same rules as any other
-Project. Three things differ: it runs apart from the Projects that have real
+Project, and to the lab's own ([below](#lab-file-lab-networks-lab-volumes-lab-services-lab-labels--a-prototype-asks-the-lab-for-nothing-it-refuses)). Three things differ: it runs apart from the Projects that have real
 users, nothing it stores is backed up, and it may be thrown away. How long
 it lives and who may see it are its own settings, not what makes it one: a
 site left up for months for a prospect and a demo deleted the day after a
@@ -499,9 +507,9 @@ indistinguishable from one that is not.
 ### `no-committed-env` — no `.env` in the repository
 
 The one mistake that puts a real secret somewhere it can never be removed
-from. Checked against what git tracks, not against what is in the directory:
-a developer's own ignored `.env` is correct and must not fail anybody's
-check. `.env.example` is allowed and encouraged — naming the keys is how a
+from. Checked against what git tracks or would add, not against what is in the
+directory: a developer's own ignored `.env` is correct and must not fail
+anybody's check. `.env.example` is allowed and encouraged — naming the keys is how a
 Project stays legible to somebody who holds none of the values.
 
 ### `multi-stage-dockerfiles` — build in one stage, run in another
@@ -511,6 +519,51 @@ registry's free-plan transfer quota is counted against every pull the
 production host makes, and a single-stage image ships the build tree —
 compilers, dev dependencies, caches — to production and over that quota on
 every deploy.
+
+### `lab-file`, `lab-networks`, `lab-volumes`, `lab-services`, `lab-labels` — a Prototype asks the lab for nothing it refuses
+
+**A Prototype only.** Its Stack is deployed by the control host, and the
+deploy can do anything Docker can, which is root. A Prototype's Compose file
+may be written by an agent that has been misled. So the lab's deploy lists
+what a Stack may ask for, and refuses everything else. These rules check
+the same list, read from the same render, so a Prototype learns it on its
+pull request and not on its first deploy:
+
+- **the file:** a `name` that is the slug, and no top-level key besides
+  `services`, `networks`, `volumes`. An `x-` extension counts as a key;
+- **networks:** `web` named `web`, `data` named `data`, and networks of the
+  Stack's own, with nothing but `internal` set;
+- **volumes:** the Stack's own, unnamed, on the `local` driver, with no
+  options and nothing external;
+- **services:** only keys that configure the service's own process, or
+  restrict it: no `privileged`, capability, device, host namespace or
+  `pull_policy`. Not root. A network joined plainly, with no alias. No
+  anonymous volume and no mount of the host. No name of the host's own
+  containers: `traefik`, `postgres-lab`, `access-code`, `hello`;
+- **labels:** routers, Traefik services and middlewares named after the
+  slug, as `${PROJECT_SLUG}` or `${PROJECT_SLUG}_<suffix>`. A router answers
+  for `Host` of the Prototype's own hostname, with one path at most. The
+  lab's entrypoints and certificate resolver, a short list of middleware
+  types, and nothing else of Traefik's or of Docker Compose's.
+
+**Why the lab is stricter than production.** Production deploys a Project
+written by the people who own it. The lab deploys whatever was pushed to a
+Prototype, next to other Prototypes and the host's own services. Some names
+production accepts would collide there:
+- `<slug>-api` is a router name for a Project. On the lab, another
+  Prototype's slug could be `<slug>-api`. The `_` cannot appear in a slug,
+  so the lab's names use it.
+- An alias is a second name on a network. On the lab, a network can be
+  shared with other Stacks.
+
+So a Project is not held to these rules, and a promoted Prototype stops
+being held to them. Production's refusals stay the other rules', which
+apply to Prototypes too.
+
+**One table for both sides.** `doden-contract`'s
+[`docs/lab.md`](https://github.com/Dodeun/doden-contract/blob/v3/docs/lab.md)
+lists every refusal of the lab's policy beside the rule that catches it, or
+says why none can. A refusal added on either side gets its row there.
 
 ## Reported, never enforced
 

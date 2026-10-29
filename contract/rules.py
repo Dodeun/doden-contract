@@ -896,11 +896,16 @@ def no_committed_env(project):
             continue
         if base.endswith(".example") or base.endswith(".sample"):
             continue
+        where = (
+            " is not ignored, so the next commit carries it"
+            if name in project.untracked else " is committed"
+        )
         yield Violation(
             "no-committed-env",
-            name + " is committed. A .env in the repository is how a real "
-            "secret reaches a place it can never be removed from; keep "
-            ".env.example, which names the keys and holds none of them.",
+            name + where + ". A .env in the repository is how a real "
+            "secret reaches a place it can never be removed from; ignore it "
+            "in .gitignore, and keep .env.example, which names the keys and "
+            "holds none of them.",
         )
 
 
@@ -979,3 +984,9 @@ def image_size(project):
             + " - size not measured; ticket 16 measures what a pull "
             "transfers, which is not bytes on disk"
         )
+
+
+# The rules a Prototype is held to on the lab as well, in a module of their
+# own because they apply to it alone. Imported last, so they report after
+# the contract's own.
+from . import lab  # noqa: E402,F401

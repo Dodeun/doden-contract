@@ -217,6 +217,14 @@ file, which no earlier `v3` refused. On 2026-10-26 no Project declared any
 other network - `20min-tracker`, `jobs-finder` and both trial Prototypes
 join `web` and `data` alone - so it newly refused nothing that passed.
 
+**`v3.5.0` is a minor for the same reason.** Its five `lab-*` rules refuse
+in a Prototype only what the lab's deploy already refuses (`docs/lab.md`,
+each row checked against `compose-policy.jq`), so a Prototype they newly
+refuse is one that never deployed. On 2026-10-29 the four Prototypes of
+ticket 47's trial, made from the Template and deployed to the lab, passed
+them. A Project is not held to them; `20min-tracker` and `jobs-finder` pass.
+It also reads files git does not track yet. In CI's checkout there are none.
+
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned
 *version*, not the text, so a prose fix cannot refuse every Project at once —

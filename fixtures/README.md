@@ -27,6 +27,13 @@ you exactly what the rule objects to.
 - The merged tree is `git init`ed and staged, because "no committed `.env`"
   is a question about the index rather than about the directory.
 
+Overlays stack: a Prototype's example is an overlay on **`pass/prototype`**,
+whose Stack is one the lab accepts, with its Traefik names written
+`<slug>_<suffix>`. `base/`'s `<slug>-api` is a Project's and passes; on the
+lab it could be another Prototype's. The lab's own rules are shown
+row by row in `tests/test_lab.py`, against the table in `docs/lab.md`,
+rather than by a fixture each.
+
 `pass/` trees must come back clean. `fail/` trees must fire exactly one rule
 — if a fixture fires two, either the fixture is doing too much or two rules
 overlap, and both are worth knowing.

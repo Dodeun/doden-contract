@@ -10,6 +10,8 @@ Fixtures are overlays on `fixtures/base`, a conforming Project. A failing
 fixture ships only the files that differ, so the fixture *is* the diff that
 makes the rule fire. `.remove` in an overlay lists paths to delete from the
 merged tree, one per line, which is how "this file is missing" is expressed.
+Overlays stack, each over the last: a Prototype's failing example is an
+overlay on `pass/prototype`, whose Stack is one the lab accepts.
 
 CONTRACT.md is copied into the merged tree from this repository's canonical
 copy, exactly as the platform copies it into a Project - so the fixtures
@@ -29,12 +31,12 @@ CHECK = ROOT / "check.py"
 FIXTURES = ROOT / "fixtures"
 
 
-def merge(overlay: str | None) -> Path:
-    """Build a working tree: base, plus the overlay, plus the canonical CONTRACT.md."""
+def merge(*overlays: str | None) -> Path:
+    """Build a working tree: base, plus the overlays in order, plus the canonical CONTRACT.md."""
     tree = Path(tempfile.mkdtemp(prefix="doden-fixture-"))
     shutil.copytree(FIXTURES / "base", tree, dirs_exist_ok=True)
     removed = set()
-    if overlay:
+    for overlay in filter(None, overlays):
         src = FIXTURES / overlay
         if not src.is_dir():
             raise AssertionError(f"no such fixture: {overlay}")
@@ -86,11 +88,18 @@ def check(tree: Path) -> dict:
         )
 
 
-class FixtureCase(unittest.TestCase):
-    """Base class: run a fixture and assert exactly which rules fired."""
+# The Prototype every Prototype's example is an overlay on.
+PROTOTYPE = "pass/prototype"
 
-    def verdict(self, overlay: str | None):
-        tree = merge(overlay)
+
+class FixtureCase(unittest.TestCase):
+    """Base class: run a fixture and assert exactly which rules fired.
+
+    `overlay` is one overlay, or a tuple of them stacked in order.
+    """
+
+    def verdict(self, overlay: str | tuple | None):
+        tree = merge(*(overlay if isinstance(overlay, tuple) else (overlay,)))
         self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
         return check(tree)
 
@@ -99,7 +108,7 @@ class FixtureCase(unittest.TestCase):
         self.assertEqual(
             [],
             result["violations"],
-            f"{overlay or 'base'} is meant to be a conforming Project",
+            f"{overlay or 'base'} is meant to be a conforming Project: {result['violations']}",
         )
         self.assertTrue(result["ok"])
 
@@ -241,7 +250,7 @@ class Prototypes(FixtureCase):
 
     def test_a_prototype_without_an_access_code_passes(self):
         """Public is the default: most Prototypes have no code."""
-        self.assertPasses("pass/prototype-without-access-code")
+        self.assertPasses((PROTOTYPE, "pass/prototype-without-access-code"))
 
     def test_a_prototype_past_its_date_still_passes(self):
         """The verdict cannot depend on the day it is asked.
@@ -250,17 +259,17 @@ class Prototypes(FixtureCase):
         has gone by is stopped by the platform, not refused by its own CI -
         which would turn its next push, the one that moves the date, red.
         """
-        self.assertPasses("pass/prototype-past-its-date")
+        self.assertPasses((PROTOTYPE, "pass/prototype-past-its-date"))
 
     def test_a_prototype_served_outside_the_lab_is_refused(self):
         self.assertFails(
-            "fail/prototype-host-outside-lab", "prototype-host",
+            (PROTOTYPE, "fail/prototype-host-outside-lab"), "prototype-host",
             names="fixture-base.lab.doden.dev",
         )
 
     def test_a_prototype_served_under_another_slug_is_refused(self):
         self.assertFails(
-            "fail/prototype-host-another-slug", "prototype-host",
+            (PROTOTYPE, "fail/prototype-host-another-slug"), "prototype-host",
             names="fixture-base.lab.doden.dev",
         )
 
@@ -272,20 +281,20 @@ class Prototypes(FixtureCase):
 
     def test_an_expiry_written_another_way_is_refused(self):
         self.assertFails(
-            "fail/prototype-expires-not-iso", "prototype-expires",
+            (PROTOTYPE, "fail/prototype-expires-not-iso"), "prototype-expires",
             names="YYYY-MM-DD",
         )
 
     def test_an_expiry_python_would_parse_but_a_person_misreads_is_refused(self):
         """`date.fromisoformat` takes 20261115; nobody reads it at a glance."""
         self.assertFails(
-            "fail/prototype-expires-compact", "prototype-expires",
+            (PROTOTYPE, "fail/prototype-expires-compact"), "prototype-expires",
             names="YYYY-MM-DD",
         )
 
     def test_an_expiry_on_a_day_that_does_not_exist_is_refused(self):
         self.assertFails(
-            "fail/prototype-expires-impossible-day", "prototype-expires",
+            (PROTOTYPE, "fail/prototype-expires-impossible-day"), "prototype-expires",
             names="2026-02-30",
         )
 
@@ -560,6 +569,48 @@ class ConfigurationAndImages(FixtureCase):
             "fail/single-stage-dockerfile", "multi-stage-dockerfiles",
             names="backend/Dockerfile",
         )
+
+
+class FilesGitDoesNotTrackYet(FixtureCase):
+    """A run before a commit judges what that commit will hold.
+
+    The files git tracks, and the ones it does not track yet and does not
+    ignore: an agent that writes a file and runs the checker before `git add`
+    is asking about the repository it is about to push (ticket 57).
+    """
+
+    def tree(self):
+        tree = merge(None)
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+        return tree
+
+    def test_an_untracked_env_is_judged(self):
+        tree = self.tree()
+        (tree / ".env").write_text("SECRET=1\n")
+        result = check(tree)
+        self.assertEqual(["no-committed-env"], sorted({v["rule"] for v in result["violations"]}))
+        self.assertIn("next commit", result["violations"][0]["message"])
+
+    def test_an_untracked_single_stage_dockerfile_is_judged(self):
+        tree = self.tree()
+        (tree / "tools").mkdir()
+        (tree / "tools" / "Dockerfile").write_text("FROM alpine:3\n")
+        result = check(tree)
+        self.assertEqual(["multi-stage-dockerfiles"], sorted({v["rule"] for v in result["violations"]}))
+        self.assertIn("tools/Dockerfile", result["violations"][0]["message"])
+
+    def test_an_untracked_file_git_ignores_is_not_judged(self):
+        tree = self.tree()
+        (tree / ".gitignore").write_text(".env\n")
+        (tree / ".env").write_text("SECRET=1\n")
+        self.assertEqual([], check(tree)["violations"])
+
+    def test_a_file_not_added_yet_counts_as_there(self):
+        tree = self.tree()
+        subprocess.run(
+            ["git", "rm", "-q", "--cached", "PLATFORM-FINDINGS.md"], cwd=tree, check=True
+        )
+        self.assertEqual([], check(tree)["violations"])
 
 
 class ReportedNotEnforced(FixtureCase):
