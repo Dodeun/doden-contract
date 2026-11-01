@@ -28,7 +28,20 @@ from dataclasses import dataclass, field
 # name is not a typo, GitHub names the job of a called workflow after the
 # caller and the callee both. A Project requiring *more* than these is not
 # drift; requiring fewer is.
+#
+# `selfcheck` stays out on purpose (decision 73 of phase 5). `20min-tracker`
+# predates the Template and has neither that context nor the `profile.yml` it
+# checks, and the check says whether a repository is still a faithful copy of
+# the Template, which is not what makes a Project safe to merge into. Every
+# Project made by `project new` requires it anyway, and the floor is a minimum.
 REQUIRED_CONTEXTS = ("test", "contract / tier-1")
+
+# GitHub Actions' app id, the `integration_id` a required context must carry.
+# A context with none is satisfied by a status of that name from anything able
+# to post one - a token with `statuses: write`, any other App - so the check
+# would require a name and not a run. Pinned to the one app that runs this
+# platform's workflows; the same number on every repository, for every owner.
+GITHUB_ACTIONS_APP_ID = 15368
 
 # The rules the default branch has to be under. `pull_request` is what makes
 # a direct push impossible, and the other two are what stop the branch being
@@ -264,11 +277,12 @@ def required_checks(settings, platform):
         )
         return
 
-    contexts = {
-        c["context"]
+    required = [
+        c
         for r in checks
         for c in r.get("parameters", {}).get("required_status_checks", [])
-    }
+    ]
+    contexts = {c["context"] for c in required}
     for wanted in platform.required_contexts:
         if wanted not in contexts:
             yield Finding(
@@ -276,6 +290,26 @@ def required_checks(settings, platform):
                 f"`{wanted}` is not a required status check. Present: "
                 + (", ".join(f"`{c}`" for c in sorted(contexts)) or "nothing")
                 + ".",
+            )
+            continue
+        ids = {c.get("integration_id") for c in required if c["context"] == wanted}
+        if GITHUB_ACTIONS_APP_ID in ids:
+            continue
+        others = sorted(str(i) for i in ids if i is not None)
+        if others:
+            yield Finding(
+                "required-checks",
+                f"`{wanted}` is required from app {', '.join(others)} and not "
+                f"from GitHub Actions ({GITHUB_ACTIONS_APP_ID}), so the run "
+                "that judges a pull request is not the one the merge waits "
+                f"for. Set its `integration_id` to {GITHUB_ACTIONS_APP_ID}.",
+            )
+        else:
+            yield Finding(
+                "required-checks",
+                f"`{wanted}` is required with no `integration_id`, so a status "
+                "of that name from anything able to post one satisfies it. "
+                f"Set it to {GITHUB_ACTIONS_APP_ID}, GitHub Actions.",
             )
     if not any(
         r.get("parameters", {}).get("strict_required_status_checks_policy")

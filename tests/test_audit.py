@@ -249,6 +249,60 @@ class NotCheckedIsNotPassed(AuditTestCase):
         self.assertIn("not that it passed", proc.stdout)
 
 
+class TheRequiredChecksComeFromGitHubActions(AuditTestCase):
+    """A required context names a run only once it names who may post it.
+
+    Decision 73 of phase 5. Each finding names the context and what is wrong
+    with its source, because "set the id" is no help to somebody looking at a
+    ruleset that already has one.
+    """
+
+    def findings(self, fixture):
+        overlay = json.loads((FIXTURES / "fail" / fixture).read_text(encoding="utf-8"))
+        result, status = self.audit(merge(overlay))
+        self.assertEqual(1, status, result)
+        return [
+            f["message"]
+            for f in result["projects"][0]["findings"]
+            if f["rule"] == "required-checks"
+        ]
+
+    def test_a_context_with_no_id_is_named(self):
+        messages = self.findings("required-checks-no-integration-id.json")
+        self.assertEqual(1, len(messages), messages)
+        self.assertIn("`test`", messages[0])
+        self.assertIn("no `integration_id`", messages[0])
+        self.assertIn("15368", messages[0])
+
+    def test_a_context_pinned_to_another_app_names_that_app(self):
+        messages = self.findings("required-checks-another-integration-id.json")
+        self.assertEqual(1, len(messages), messages)
+        self.assertIn("`contract / tier-1`", messages[0])
+        self.assertIn("5188376", messages[0])
+        self.assertNotIn("no `integration_id`", messages[0])
+
+    def test_one_pinned_entry_is_enough_when_a_context_is_listed_twice(self):
+        """Rulesets layer, so the same context may be required by two of
+        them. The pinned one still has to be satisfied by GitHub Actions'
+        run, so an unpinned duplicate opens nothing."""
+        overlay = json.loads(
+            (FIXTURES / "pass" / "rules-split-across-two-rulesets.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        overlay["rulesets"]["protect-main"]["rules"].append(
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "strict_required_status_checks_policy": True,
+                    "required_status_checks": [{"context": "test"}],
+                },
+            }
+        )
+        result, status = self.audit(merge(overlay))
+        self.assertEqual(0, status, result)
+
+
 class WhatGitHubApplies(AuditTestCase):
     """The rulesets say `active`; GitHub is what says whether they apply.
 
@@ -301,8 +355,11 @@ class WhatGitHubApplies(AuditTestCase):
                                 "parameters": {
                                     "strict_required_status_checks_policy": True,
                                     "required_status_checks": [
-                                        {"context": "test"},
-                                        {"context": "contract / tier-1"},
+                                        {"context": "test", "integration_id": 15368},
+                                        {
+                                            "context": "contract / tier-1",
+                                            "integration_id": 15368,
+                                        },
                                     ],
                                 },
                             },

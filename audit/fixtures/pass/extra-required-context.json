@@ -12,9 +12,9 @@
           "parameters": {
             "strict_required_status_checks_policy": true,
             "required_status_checks": [
-              { "context": "test" },
-              { "context": "contract / tier-1" },
-              { "context": "selfcheck" }
+              { "context": "test", "integration_id": 15368 },
+              { "context": "contract / tier-1", "integration_id": 15368 },
+              { "context": "selfcheck", "integration_id": 15368 }
             ]
           }
         }
