@@ -10,7 +10,7 @@ fails its check first, on its pull request, not on its first deploy. Ticket
 47's trial had two first deploys refused that the checker had passed.
 
 **This table is where the two meet.** One row per refusal of
-`compose-policy.jq`, read at `doden-control-host` commit `2545076`, with the
+`compose-policy.jq`, read at `doden-control-host` commit `0970f63`, with the
 rule of `check.py` that catches the same thing in a repository. A refusal
 added to either side gets its row here, and the other side follows.
 `tests/test_lab.py` builds, for every row, a Prototype that the row describes,
@@ -18,12 +18,13 @@ and checks that `check.py` refuses it with that rule and no other. A row
 without a test fails the suite.
 
 Most rows are the `lab-*` rules of [`contract/lab.py`](../contract/lab.py).
-They hold **a Prototype only**, a Manifest with a `prototype` block,
-because production has no such policy and accepts some things the lab
-refuses: a router called `<slug>-api`, or an alias on a network of the
-Stack's own. CONTRACT.md says why the lab is stricter. Where a rule of the
-contract's already catches a refusal, in every Project, that rule is the
-row's, and the `lab-*` rules do not repeat it.
+They hold **a Prototype only**, a Manifest with a `prototype` block. A
+Project is held to production's list instead, whose table is
+[`prod.md`](prod.md): it accepts a router called `<slug>-api`, which the
+lab refuses, and refuses some things the lab does not, an image of another
+registry among them. CONTRACT.md says why the two differ. Where a rule of
+the contract's already catches a refusal, in every Project, that rule is
+the row's, and the `lab-*` rules do not repeat it.
 
 The checker renders with its sentinels for the slug and the hostname, and
 the lab with the real ones. A name built from `${PROJECT_SLUG}` behaves the
@@ -73,6 +74,7 @@ lab rules see it.
 | S5 | `env_file`: the policy never sees it, because the render folds it into `environment`, or fails on the lab, where the file is not | `no-env-file`, from the source |
 | S6 | a service with no image | `compose-file`: Compose refuses to render it |
 | S7 | `user` root, by name or number, as the user or the group | `lab-services` |
+| S7b | `user` `-0`, a signed zero, which Docker reads as uid 0 too | `lab-services` |
 | S8 | a service that joins no network | `lab-services` |
 | S9 | a network the file does not declare | `compose-file` |
 | S10 | joining a network with settings: aliases, an address, a priority | `lab-services` |
