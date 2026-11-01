@@ -225,6 +225,17 @@ ticket 47's trial, made from the Template and deployed to the lab, passed
 them. A Project is not held to them; `20min-tracker` and `jobs-finder` pass.
 It also reads files git does not track yet. In CI's checkout there are none.
 
+**`v3.6.0` is a minor: tier 1 does not change.** The tier-2
+`required-checks` rule now also asks that `test` and `contract / tier-1` be
+required with `integration_id` `15368`, GitHub Actions' app id, so that the
+check names a run and not a status anybody can post (decision 73 of phase 5).
+The audit reports and refuses nothing. On 2026-11-01 both Projects' rulesets,
+read with `gh api`, carried `15368` on every required context and passed it.
+`selfcheck` stays off the floor, and `audit/rules.py` says why beside
+`REQUIRED_CONTEXTS`. `CONTRACT.md` says so in its `required-checks` passage,
+because a Project following it to the letter would otherwise be reported;
+the Projects' copies were already behind, at `v3.3.0`'s, and take this one.
+
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned
 *version*, not the text, so a prose fix cannot refuse every Project at once —

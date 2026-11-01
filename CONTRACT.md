@@ -618,13 +618,21 @@ a literal is reported as the weakness it is rather than as an absence.
 ### `required-checks` — a pull request cannot land until the platform's checks pass
 
 A `required_status_checks` rule naming at least `test` and
-`contract / tier-1`, with `strict` on.
+`contract / tier-1`, each with `integration_id` `15368`, with `strict` on.
 
 Without it the checks run, go red, and the merge button stays green:
 reporting a failure and refusing a merge are different things. `strict` is
 the second half — without it a branch can land on a trunk it was never tested
 against, which makes the trunk the thing that discovers the problem. A
 Project requiring *more* contexts is not drift.
+
+`15368` is GitHub Actions' app id. A context required with no
+`integration_id` is satisfied by a status of that name from anything able to
+post one, so the rule would require a name and not a run; one pinned to
+another app waits for that app instead of the workflow. `selfcheck` is not on
+the floor: a Project that predates the Template has neither that context nor
+the `profile.yml` it checks, and the check says whether a repository is still
+a faithful copy of the Template, not whether a merge into it is safe.
 
 ### `protect-releases` — an existing release tag cannot be moved or deleted
 

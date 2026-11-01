@@ -1,0 +1,23 @@
+{
+  "fires": ["required-checks"],
+  "why": "A required context with no `integration_id` is satisfied by a status of that name from anything able to post one, so a token with `statuses: write` turns `test` green on a commit the suite never ran on.",
+  "rulesets": {
+    "protect-main": {
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        { "type": "pull_request", "parameters": { "required_approving_review_count": 0 } },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "required_status_checks": [
+              { "context": "test" },
+              { "context": "contract / tier-1", "integration_id": 15368 }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

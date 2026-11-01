@@ -1,0 +1,23 @@
+{
+  "fires": ["required-checks"],
+  "why": "The context is pinned, to the wrong source. A required `test` that only another App may post is a suite GitHub Actions can run, go red on, and not stop the merge with, while whoever holds that App turns it green.",
+  "rulesets": {
+    "protect-main": {
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        { "type": "pull_request", "parameters": { "required_approving_review_count": 0 } },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "required_status_checks": [
+              { "context": "test", "integration_id": 15368 },
+              { "context": "contract / tier-1", "integration_id": 5188376 }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
