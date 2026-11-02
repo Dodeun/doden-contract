@@ -26,8 +26,9 @@ in, and interpolates `${...}` from it too, so a render under the caller's
 environment would differ between CI, a laptop and the host: `SHELL:` would
 come back filled on a runner and empty on the host. The host renders with
 the five values it supplies and nothing else, so a key written with no value
-stays null there unless it is one of them - which is what makes it a secret,
-taken from Doppler. The checker renders the same way: the sentinels, and
+stays null there unless it is one of them, or `PWD` or `COMPOSE_PROJECT_NAME`,
+which Compose fills itself - and a key left null is a secret, taken from
+Doppler. The checker renders the same way: the sentinels, and
 only the few variables the docker CLI reads to find its configuration and
 its Compose plugin. A key of one of those names that comes back with exactly
 their value was filled by the render, and is put back to null, as the host

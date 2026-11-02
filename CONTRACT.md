@@ -610,8 +610,9 @@ deploy, after a release tag that cannot be moved:
   digit. No secret, an environment key with no value, that is not the name
   of a variable, or that names what docker, bash or the deploy reads:
   `PATH`, `HOME`, `DOCKER_HOST`, `LD_PRELOAD` and their like. The five
-  values the platform supplies, written with no value, are filled by the
-  render, there and here, and are not secrets;
+  values the platform supplies, and `PWD` and `COMPOSE_PROJECT_NAME`, which
+  Compose sets itself, written with no value, are filled by the render,
+  there and here, and are not secrets;
 - **labels:** as the lab's, with routers, Traefik services and middlewares
   named `${PROJECT_SLUG}`, `${PROJECT_SLUG}-<suffix>` or
   `${PROJECT_SLUG}_<suffix>`, a router answering for `Host` of the

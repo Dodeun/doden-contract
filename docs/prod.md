@@ -48,7 +48,8 @@ The checker renders with its sentinels for the slug, the hostname, the image
 prefix, the tag and the release, and the host with the real ones, and
 neither with anything else of the shell that runs it. So a key written with
 no value is null in both renders, a secret taken from Doppler, unless it is
-one of those five, which the render fills. A name built from
+one of those five, or `PWD` or `COMPOSE_PROJECT_NAME`, which Compose fills
+itself: none of the seven is a secret, and none is refused. A name built from
 `${PROJECT_SLUG}` behaves the same in both renders. Where the host would
 accept a literal, so does the checker: the slug, the hostname and the image
 prefix as the Manifest has them. A literal Traefik name is `traefik-names`'s

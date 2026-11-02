@@ -255,6 +255,15 @@ class SecretsDoNotDependOnWhoRendersThem(unittest.TestCase):
         result = self.verdict(*(secret(name) for name in ("RELEASE_TAG", "IMAGE_TAG", "PROJECT_SLUG", "APP_HOST")))
         self.assertEqual([], result["violations"])
 
+    def test_what_compose_fills_itself_is_not_a_secret(self):
+        """Compose fills PWD and COMPOSE_PROJECT_NAME, `/` and the slug on the host, so neither is null there.
+
+        The host's forbidden names, `COMPOSE_` among them, are read on a key
+        left null alone, so neither is refused either.
+        """
+        result = self.verdict(secret("PWD"), secret("COMPOSE_PROJECT_NAME"))
+        self.assertEqual([], result["violations"])
+
 
 class AProjectOnly(unittest.TestCase):
     """A Prototype is held to the lab's list, and not to production's."""
