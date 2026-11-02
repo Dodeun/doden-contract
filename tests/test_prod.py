@@ -14,10 +14,13 @@ Prototype, and its Stack with the Project's names, `<slug>-api`.
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_fixtures import CHECK, PROTOTYPE, ROOT, check, merge  # noqa: E402
@@ -255,6 +258,14 @@ class SecretsDoNotDependOnWhoRendersThem(unittest.TestCase):
         result = self.verdict(*(secret(name) for name in ("RELEASE_TAG", "IMAGE_TAG", "PROJECT_SLUG", "APP_HOST")))
         self.assertEqual([], result["violations"])
 
+    def test_what_the_docker_cli_hands_compose_is_a_secret_like_any_other(self):
+        """The CLI fills DOCKER_CLI_PLUGIN_* in Compose's environment; the host's render leaves them null."""
+        for name in ("DOCKER_CLI_PLUGIN_ORIGINAL_CLI_COMMAND", "DOCKER_CLI_PLUGIN_SOCKET"):
+            with self.subTest(name=name):
+                result = self.verdict(secret(name))
+                self.assertEqual(["prod-services"], sorted({v["rule"] for v in result["violations"]}))
+                self.assertIn(name, " ".join(v["message"] for v in result["violations"]))
+
     def test_what_compose_fills_itself_is_not_a_secret(self):
         """Compose fills PWD and COMPOSE_PROJECT_NAME, `/` and the slug on the host, so neither is null there.
 
@@ -263,6 +274,42 @@ class SecretsDoNotDependOnWhoRendersThem(unittest.TestCase):
         """
         result = self.verdict(secret("PWD"), secret("COMPOSE_PROJECT_NAME"))
         self.assertEqual([], result["violations"])
+
+
+@unittest.skipUnless(os.name == "posix", "a fake docker is an executable script on Linux and macOS")
+class DockerIsFoundOnTheCallersPath(unittest.TestCase):
+    """The render's environment has no PATH, so docker is named by its full path.
+
+    Without that, a bare `docker` is looked for in /bin and /usr/bin alone,
+    and Docker Desktop on macOS, Homebrew and snap put it elsewhere.
+    """
+
+    def test_a_docker_outside_usr_bin_renders_and_is_handed_no_path(self):
+        from contract import compose
+
+        bin_dir = Path(tempfile.mkdtemp(prefix="doden-fake-docker-"))
+        tree = Path(tempfile.mkdtemp(prefix="doden-tree-"))
+        self.addCleanup(shutil.rmtree, bin_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+        seen = bin_dir / "environment.json"
+        fake = bin_dir / "docker"
+        fake.write_text(
+            "\n".join([
+                "#!" + sys.executable,
+                "import json, os",
+                "json.dump(dict(os.environ), open(" + repr(str(seen)) + ", 'w'))",
+                "print(json.dumps({'name': 'x', 'services': {}}))",
+                "",
+            ]),
+            encoding="utf-8",
+        )
+        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+        (tree / "docker-compose.prod.yml").write_text("name: x\nservices: {}\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PATH": str(bin_dir)}):
+            rendered, error = compose.render(tree)
+        self.assertIsNone(error)
+        self.assertEqual("x", rendered["name"])
+        self.assertNotIn("PATH", json.loads(seen.read_text(encoding="utf-8")))
 
 
 class AProjectOnly(unittest.TestCase):

@@ -38,6 +38,7 @@ has it.
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -71,6 +72,9 @@ DOCKER_CLI_VARIABLES = (
     "HOME", "DOCKER_CONFIG", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
     "PROGRAMDATA", "PROGRAMFILES", "SYSTEMROOT",
 )
+
+# What the docker CLI sets in its plugin's environment, whatever it was given.
+CLI_PLUGIN_PREFIX = "DOCKER_CLI_PLUGIN_"
 
 _BRACED = re.compile(
     r"\$\{([A-Za-z_][A-Za-z0-9_]*)((?::-|:\?|:\+|-|\?|\+))?([^}]*)\}"
@@ -133,13 +137,18 @@ def render(tree):
     }
     environment = dict(cli)
     environment.update(SENTINEL)
+    # Found on the caller's PATH, and named by its full path: the render's
+    # environment has no PATH, so that `PATH:` stays null as on the host,
+    # and without one a bare `docker` is looked for in /bin and /usr/bin
+    # alone, where Docker Desktop on macOS, Homebrew and snap do not put it.
+    docker = shutil.which("docker") or "docker"
 
     handle, empty_env = tempfile.mkstemp(prefix="doden-contract-", suffix=".env")
     os.close(handle)
     try:
         proc = subprocess.run(
             [
-                "docker", "compose",
+                docker, "compose",
                 "--project-directory", str(tree),
                 "--file", str(path),
                 # Neutralises any .env sitting in the tree, so the verdict is
@@ -196,6 +205,13 @@ def _unfilled(rendered, cli):
             continue
         for name, value in cli.items():
             if environment.get(name) == value:
+                environment[name] = None
+        # The docker CLI hands its plugin, Compose, its own path and a socket
+        # of a random name under these, and the host's render leaves them
+        # null. A value written for one in the file is read as null as well:
+        # nobody writes one.
+        for name in environment:
+            if name.startswith(CLI_PLUGIN_PREFIX):
                 environment[name] = None
     return rendered
 
