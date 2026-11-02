@@ -576,7 +576,7 @@ So a Prototype is held to the lab's rules and a Project to production's, and
 a promoted Prototype moves from one to the other. A Prototype made from the
 Template passes both.
 
-**One table for each side.** `doden-contract`'s
+**One table for both sides.** `doden-contract`'s
 [`docs/lab.md`](https://github.com/Dodeun/doden-contract/blob/v3/docs/lab.md)
 lists every refusal of the lab's policy beside the rule that catches it, or
 says why none can. A refusal added on either side gets its row there.
@@ -609,7 +609,9 @@ deploy, after a release tag that cannot be moved:
   lower case letters, digits, `_`, `.` and `-`, starting with a letter or a
   digit. No secret, an environment key with no value, that is not the name
   of a variable, or that names what docker, bash or the deploy reads:
-  `PATH`, `DOCKER_HOST`, `LD_PRELOAD`, `PROJECT_SLUG` and their like;
+  `PATH`, `HOME`, `DOCKER_HOST`, `LD_PRELOAD` and their like. The five
+  values the platform supplies, written with no value, are filled by the
+  render, there and here, and are not secrets;
 - **labels:** as the lab's, with routers, Traefik services and middlewares
   named `${PROJECT_SLUG}`, `${PROJECT_SLUG}-<suffix>` or
   `${PROJECT_SLUG}_<suffix>`, a router answering for `Host` of the

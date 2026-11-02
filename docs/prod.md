@@ -45,7 +45,10 @@ And no `@file` middleware, since production's Traefik has no file provider,
 and the host's own containers have other names.
 
 The checker renders with its sentinels for the slug, the hostname, the image
-prefix and the tag, and the host with the real ones. A name built from
+prefix, the tag and the release, and the host with the real ones, and
+neither with anything else of the shell that runs it. So a key written with
+no value is null in both renders, a secret taken from Doppler, unless it is
+one of those five, which the render fills. A name built from
 `${PROJECT_SLUG}` behaves the same in both renders. Where the host would
 accept a literal, so does the checker: the slug, the hostname and the image
 prefix as the Manifest has them. A literal Traefik name is `traefik-names`'s
@@ -107,8 +110,8 @@ to refuse, before the `prod-*` rules see it.
 | S12 | an anonymous volume | `prod-services` |
 | S13 | a mount that is not a volume or a tmpfs: a bind, the Docker socket among them | `prod-services` |
 | S14 | a volume mounted with an option other than `nocopy`: `subpath` among them | `prod-services` |
-| S15 | a secret, an environment key with no value, that is not the name of an environment variable | `prod-services` |
-| S16 | a secret of a name the deploy itself reads: `PATH`, `DOCKER_HOST`, `LD_PRELOAD`, `PROJECT_SLUG` and the like | `prod-services` |
+| S15 | a secret, an environment key with no value that the render does not fill, that is not the name of an environment variable | `prod-services` |
+| S16 | a secret of a name docker, bash or the deploy itself reads: `PATH`, `HOME`, `DOCKER_HOST`, `DOCKER_CONFIG`, `LD_PRELOAD` and the like | `prod-services` |
 
 ## Labels
 

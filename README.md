@@ -249,6 +249,11 @@ passed production's list with no refusal, `20min-tracker` at
 `workout-tracker.doden.dev`; written, the rules passed both, and the
 Template with its Manifest filled in. The `lab-*` rules now read `user: "-0"`
 as root, as Docker does, and as the lab's deploy has since ticket 76 (gap 10).
+The render no longer takes the calling shell's environment, only the five
+values the platform supplies and what the docker CLI needs to find its
+plugin, so a key written with no value is a secret in CI, on a laptop and on
+the host alike: `SHELL:` was filled on a runner and null on the host. No
+other rule reads those values.
 
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned

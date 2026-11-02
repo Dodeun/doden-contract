@@ -18,9 +18,20 @@ The render uses the platform's own values, not the Project's, and not the
 invoking shell's. The Project's identity variables become fixed sentinels so
 that "this name derives from the slug" can be told apart from "this name is a
 literal that happens to equal the slug" - a literal does not move when the
-sentinel does. Every other variable the file interpolates is removed from the
-environment, so the same tree renders the same way in CI and on a laptop where
-one of those names happens to be exported.
+sentinel does.
+
+**Nothing else of the invoking shell reaches the render.** Compose fills a
+key of `environment:` written with no value from the environment it runs
+in, and interpolates `${...}` from it too, so a render under the caller's
+environment would differ between CI, a laptop and the host: `SHELL:` would
+come back filled on a runner and empty on the host. The host renders with
+the five values it supplies and nothing else, so a key written with no value
+stays null there unless it is one of them - which is what makes it a secret,
+taken from Doppler. The checker renders the same way: the sentinels, and
+only the few variables the docker CLI reads to find its configuration and
+its Compose plugin. A key of one of those names that comes back with exactly
+their value was filled by the render, and is put back to null, as the host
+has it.
 """
 
 import json
@@ -46,7 +57,19 @@ SENTINEL = {
     "APP_HOST": "sentinel-host-8f3a1c.invalid",
     "IMAGE_TAG": "sha-8f3a1c00000000000000000000000000000000",
     "IMAGE_REPO_PREFIX": "ghcr.io/sentinel-8f3a1c/sentinel",
+    # Supplied by the platform too, from the release, and free to default:
+    # `${RELEASE_TAG:-unknown}` names nothing of another Project's.
+    "RELEASE_TAG": "v0.0.0-sentinel-8f3a1c",
 }
+
+# What the docker CLI reads to find its configuration and its plugins, on
+# Linux, macOS and Windows: without them `docker compose` is not found on
+# Windows. Passed to the render and to nothing else, and never one the file
+# interpolates.
+DOCKER_CLI_VARIABLES = (
+    "HOME", "DOCKER_CONFIG", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+    "PROGRAMDATA", "PROGRAMFILES", "SYSTEMROOT",
+)
 
 _BRACED = re.compile(
     r"\$\{([A-Za-z_][A-Za-z0-9_]*)((?::-|:\?|:\+|-|\?|\+))?([^}]*)\}"
@@ -101,9 +124,13 @@ def render(tree):
         )
 
     source = path.read_text(encoding="utf-8")
-    environment = dict(os.environ)
-    for use in variable_uses(source):
-        environment.pop(use.name, None)
+    interpolated = {use.name for use in variable_uses(source)}
+    cli = {
+        name: os.environ[name]
+        for name in DOCKER_CLI_VARIABLES
+        if name in os.environ and name not in interpolated
+    }
+    environment = dict(cli)
     environment.update(SENTINEL)
 
     handle, empty_env = tempfile.mkstemp(prefix="doden-contract-", suffix=".env")
@@ -144,14 +171,32 @@ def render(tree):
             "docker compose config could not render " + COMPOSE_FILE + ", so "
             "no rule about the Stack could be checked. The platform renders "
             "this file knowing only the Manifest and the release, so it must "
-            "render with only " + ", ".join(IDENTITY_VARIABLES) + " set: "
+            "render with only " + ", ".join(SENTINEL) + " set: "
             + " ".join(detail[-3:] if detail else ["no output"])
         )
 
     try:
-        return json.loads(proc.stdout), None
+        rendered = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         return None, "docker compose config emitted no usable JSON: " + str(exc)
+    return _unfilled(rendered, cli), None
+
+
+def _unfilled(rendered, cli):
+    """The render, with the keys Compose filled from the docker CLI's variables null again.
+
+    The host renders without them, so there a key such as `HOME:` stays
+    null, a secret. Only the exact value is put back: a key written with a
+    value of its own keeps it.
+    """
+    for definition in (rendered.get("services") or {}).values():
+        environment = definition.get("environment")
+        if not isinstance(environment, dict):
+            continue
+        for name, value in cli.items():
+            if environment.get(name) == value:
+                environment[name] = None
+    return rendered
 
 
 def services(rendered):

@@ -14,7 +14,7 @@ the lab refuses on its first `check.py`, not on its first deploy.
 a list of its own, `prod.py`'s rules. The two lists share their reading,
 `allowlist.py`; what is the lab's alone is here: the host's own containers,
 and Traefik names joined to the slug by `_` alone. CONTRACT.md says why the
-lab is stricter.
+two lists differ.
 
 **One copy of the policy, two readers.** docs/lab.md is the table of every
 refusal of compose-policy.jq beside the rule here that catches it, or the

@@ -12,13 +12,15 @@ Prototype, and its Stack with the Project's names, `<slug>-api`.
 """
 
 import json
+import os
 import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_fixtures import PROTOTYPE, ROOT, check, merge  # noqa: E402
+from test_fixtures import CHECK, PROTOTYPE, ROOT, check, merge  # noqa: E402
 from test_lab import (  # noqa: E402
     SLUG, Case, backend, env_file, extends, include, joins, label,
     no_database, volume, without_database_addon, worker, write,
@@ -216,6 +218,42 @@ class WhatProductionAccepts(unittest.TestCase):
     def test_prod_labels_names_with_a_hyphen_and_the_manifests_own_hostname(self):
         """`<slug>-api` is the base fixture's; the hostname, as the Manifest writes it."""
         self.assertPasses(label("traefik.http.routers.%(s)s.rule", "Host(`fixture-base.example.test`)"))
+
+
+class SecretsDoNotDependOnWhoRendersThem(unittest.TestCase):
+    """A secret is a key written with no value that the platform does not fill.
+
+    The host renders with the values it supplies and nothing else, so the
+    verdict on `SHELL:` cannot depend on whether the shell running check.py
+    exports SHELL, as a CI runner does and the host does not.
+    """
+
+    EXPORTED = {"SHELL": "/bin/bash", "USER": "runner", "LOGNAME": "runner", "DOCKER_HOST": "unix:///x.sock"}
+
+    def verdict(self, *changes):
+        tree = ProjectCase("", "", change=changes).tree()
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+        env = dict(os.environ, **self.EXPORTED)
+        proc = subprocess.run([sys.executable, str(CHECK), str(tree), "--json"],
+                              capture_output=True, text=True, env=env)
+        return json.loads(proc.stdout)
+
+    def test_a_secret_named_like_what_the_caller_exports_is_refused(self):
+        for name in sorted(self.EXPORTED) + ["HOME", "PATH"]:
+            with self.subTest(name=name):
+                result = self.verdict(secret(name))
+                self.assertEqual(["prod-services"], sorted({v["rule"] for v in result["violations"]}))
+                self.assertIn(name, " ".join(v["message"] for v in result["violations"]))
+
+    def test_a_value_written_in_the_file_is_kept(self):
+        """`HOME: /srv` is the Project's own value, not a secret, whatever HOME the caller has."""
+        result = self.verdict(lambda c: backend(c)["environment"].update(HOME="/srv"))
+        self.assertEqual([], result["violations"])
+
+    def test_what_the_platform_supplies_is_not_a_secret(self):
+        """The render fills these on the host as well, so nothing is taken from Doppler."""
+        result = self.verdict(*(secret(name) for name in ("RELEASE_TAG", "IMAGE_TAG", "PROJECT_SLUG", "APP_HOST")))
+        self.assertEqual([], result["violations"])
 
 
 class AProjectOnly(unittest.TestCase):
