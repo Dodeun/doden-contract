@@ -187,7 +187,7 @@ mentions is opaque in exactly the way this platform rules out.
 
 A **Prototype** is a Project whose loss would be an incident for nobody. It
 is copied from the same Template and held to the same rules as any other
-Project, and to the lab's own ([below](#lab-file-lab-networks-lab-volumes-lab-services-lab-labels--a-prototype-asks-the-lab-for-nothing-it-refuses)). Three things differ: it runs apart from the Projects that have real
+Project, except that the lab's list ([below](#lab-file-lab-networks-lab-volumes-lab-services-lab-labels--a-prototype-asks-the-lab-for-nothing-it-refuses)) stands in for production's. Three things differ: it runs apart from the Projects that have real
 users, nothing it stores is backed up, and it may be thrown away. How long
 it lives and who may see it are its own settings, not what makes it one: a
 site left up for months for a prospect and a demo deleted the day after a
@@ -235,9 +235,10 @@ out. A promotion is a deliberate act, done the day losing the Prototype's
 data would upset somebody. It also moves the Project out of `lab.doden.dev`
 to a hostname of its own — the one occasion on which `appHost` changes —
 and brings what a Prototype goes without: the repository settings of
-[tier 2](#tier-2--the-repositorys-own-settings), and a place on the list the
-audit reads. Until then a Prototype is held to tier 1 alone, and how far it
-is from being promotable is what its tier-1 verdict says.
+[tier 2](#tier-2--the-repositorys-own-settings), a place on the list the
+audit reads, and production's list in place of the lab's. Until then a
+Prototype is held to tier 1 alone, and how far it is from being promotable
+is what its tier-1 verdict says.
 
 ## What deserves a finding
 
@@ -540,33 +541,100 @@ pull request and not on its first deploy:
   options and nothing external;
 - **services:** only keys that configure the service's own process, or
   restrict it: no `privileged`, capability, device, host namespace or
-  `pull_policy`. Not root. A network joined plainly, with no alias. No
-  anonymous volume and no mount of the host. No name of the host's own
-  containers: `traefik`, `postgres-lab`, `access-code`, `hello`;
+  `pull_policy`. Not root, `-0` included. A network joined plainly, with
+  no alias. No anonymous volume and no mount of the host. No name of the
+  host's own containers: `traefik`, `postgres-lab`, `access-code`, `hello`;
 - **labels:** routers, Traefik services and middlewares named after the
   slug, as `${PROJECT_SLUG}` or `${PROJECT_SLUG}_<suffix>`. A router answers
   for `Host` of the Prototype's own hostname, with one path at most. The
   lab's entrypoints and certificate resolver, a short list of middleware
   types, and nothing else of Traefik's or of Docker Compose's.
 
-**Why the lab is stricter than production.** Production deploys a Project
-written by the people who own it. The lab deploys whatever was pushed to a
-Prototype, next to other Prototypes and the host's own services. Some names
-production accepts would collide there:
-- `<slug>-api` is a router name for a Project. On the lab, another
-  Prototype's slug could be `<slug>-api`. The `_` cannot appear in a slug,
-  so the lab's names use it.
-- An alias is a second name on a network. On the lab, a network can be
-  shared with other Stacks.
+**Why the two lists differ.** Production's list began as a copy of the
+lab's, and both refuse root asked for in the file, a mount of the host, an
+alias, and whatever Compose can ask that neither names. What differs follows
+from who chooses the slug, and from what each deploy does with the file:
+- **Traefik names.** On the lab an agent chooses a Prototype's slug, and
+  another Prototype's could be `<slug>-api`; the `_` cannot appear in a
+  slug, so the lab's names use it. A person chooses every Project's slug,
+  and production refuses one that begins another's followed by `-`, so a
+  Project may also name a router `<slug>-api`, as both live Projects do.
+- **Images.** Production runs only the Project's own images, at the commit
+  it deploys, so that a stolen deploy key cannot start somebody else's. The
+  lab's list does not name the image.
+- **Secrets and service names.** Production hands docker the Stack's
+  secrets by name, and names a service to `docker compose run` for the
+  migrate command, so a secret called `DOCKER_HOST` or a service called
+  `-worker` would act on the deploy itself. The lab reads a Prototype's
+  secrets from a file of its own, and checks the names there.
+- **The host's own names.** `postgres-lab`, `access-code` and `hello` on the
+  lab, `postgres`, `placeholder` and `maintenance` in production, `traefik`
+  on both. A Stack joins the database's network as `data` on both hosts,
+  and the lab renames it `lab-data`.
 
-So a Project is not held to these rules, and a promoted Prototype stops
-being held to them. Production's refusals stay the other rules', which
-apply to Prototypes too.
+So a Prototype is held to the lab's rules and a Project to production's, and
+a promoted Prototype moves from one to the other. A Prototype made from the
+Template passes both.
 
 **One table for both sides.** `doden-contract`'s
 [`docs/lab.md`](https://github.com/Dodeun/doden-contract/blob/v3/docs/lab.md)
 lists every refusal of the lab's policy beside the rule that catches it, or
 says why none can. A refusal added on either side gets its row there.
+
+### `prod-file`, `prod-networks`, `prod-volumes`, `prod-services`, `prod-labels` — a Project asks production for nothing it refuses
+
+**A Project only**, a Manifest with no `prototype` block. A Project is
+deployed by the forced command of its own deploy key, which renders its
+Compose file in a sandbox and starts the render only if it passes a list of
+what a Stack may ask for. The deploy user is in the `docker` group, which is
+root, and the file was written by whoever could push a tag. The forced
+command takes away a shell, and the list what the file can ask of Docker:
+either alone bounds nothing. These rules check the same list, read from the
+same render, so a Project learns it on its pull request, and not at its
+deploy, after a release tag that cannot be moved:
+
+- **the file:** as the lab's. A slug that is not one of the host's own
+  Compose projects or databases: `postgres`, `template0`, `template1`,
+  `traefik`, `placeholder`, `maintenance`, or anything beginning `pg-`;
+- **networks:** `web` and `data`, external and unnamed, and networks of the
+  Stack's own, with nothing but `internal` set. `data` is the shared
+  Postgres's own network;
+- **volumes:** as the lab's;
+- **services:** as the lab's, and no name of the host's own containers:
+  `traefik`, `postgres`, `placeholder`, `maintenance`. Every image is the
+  Project's own, `${IMAGE_REPO_PREFIX}-<name>:${IMAGE_TAG}`, which
+  production reads as `ghcr.io/dodeun/<slug>-<name>` at the commit it
+  deploys: never another registry or another Project's, never a digest. A
+  volume is mounted whole, with `nocopy` at most. A service is named in
+  lower case letters, digits, `_`, `.` and `-`, starting with a letter or a
+  digit. No secret, an environment key with no value, that is not the name
+  of a variable, or that names what docker, bash or the deploy reads:
+  `PATH`, `HOME`, `DOCKER_HOST`, `LD_PRELOAD` and their like. The five
+  values the platform supplies, and `PWD` and `COMPOSE_PROJECT_NAME`, which
+  Compose sets itself, written with no value, are filled by the render,
+  there and here, and are not secrets;
+- **labels:** as the lab's, with routers, Traefik services and middlewares
+  named `${PROJECT_SLUG}`, `${PROJECT_SLUG}-<suffix>` or
+  `${PROJECT_SLUG}_<suffix>`, a router answering for `Host` of the
+  Manifest's `appHost`, and no `@file` middleware: production's Traefik has
+  no file provider.
+
+**The hostname is the key's.** A deploy key is pinned to a slug and a
+hostname, and production refuses a Manifest whose `appHost` is another. The
+checker cannot see the key, so it reads the Manifest's `appHost`, and the
+host's comparison is the real one. A literal hostname, slug or image prefix
+passes here when it is the Manifest's, as it does on the host; a literal
+Traefik name is still `traefik-names`'s to refuse.
+
+**Root in an image is not refused.** Root asked for in the file is, by name
+or by number, `-0` included, as the user or as the group. An image whose own
+user is root is not: a rollback to an older Release must deploy, or it is
+refused at the worst moment.
+
+**One table for both sides.**
+[`docs/prod.md`](https://github.com/Dodeun/doden-contract/blob/v3/docs/prod.md)
+lists every refusal of production's list, and of its deploy, beside the rule
+that catches it, or says why none can.
 
 ## Reported, never enforced
 

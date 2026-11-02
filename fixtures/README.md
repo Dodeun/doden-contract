@@ -31,8 +31,10 @@ Overlays stack: a Prototype's example is an overlay on **`pass/prototype`**,
 whose Stack is one the lab accepts, with its Traefik names written
 `<slug>_<suffix>`. `base/`'s `<slug>-api` is a Project's and passes; on the
 lab it could be another Prototype's. The lab's own rules are shown
-row by row in `tests/test_lab.py`, against the table in `docs/lab.md`,
-rather than by a fixture each.
+row by row in `tests/test_lab.py`, against the table in `docs/lab.md`, and
+production's in `tests/test_prod.py`, against `docs/prod.md`, rather than
+by a fixture each: a case is the base fixture, or `pass/prototype`, changed
+in the one way its row describes.
 
 `pass/` trees must come back clean. `fail/` trees must fire exactly one rule
 — if a fixture fires two, either the fixture is doing too much or two rules

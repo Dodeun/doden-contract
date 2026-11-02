@@ -124,7 +124,17 @@ def without_database_addon(manifest):
 
 
 class Case:
-    """A row's Prototype: the rules it fires, space-separated, and words its messages say."""
+    """A row's Prototype: the rules it fires, space-separated, and words its messages say.
+
+    `overlay` is the tree the case is written over, and `stack` the Stack it
+    changes: a Prototype's here, a Project's in tests/test_prod.py.
+    """
+
+    overlay = PROTOTYPE
+
+    @staticmethod
+    def stack():
+        return stack()
 
     def __init__(self, rules, says, change=None, manifest=None, files=None):
         self.rules = sorted(rules.split())
@@ -134,9 +144,9 @@ class Case:
         self.files = files or {}
 
     def tree(self):
-        tree = merge(PROTOTYPE)
+        tree = merge(self.overlay)
         if self.change is not None:
-            c = stack()
+            c = self.stack()
             for change in self.change if isinstance(self.change, tuple) else (self.change,):
                 change(c)
             write(tree, c)
@@ -215,6 +225,7 @@ CASES = {
     "S5": Case("no-env-file", "env_file", files={"docker-compose.prod.yml": env_file, "runtime.env": "A=1\n"}),
     "S6": Case("compose-file", "neither an image", lambda c: backend(c).pop("image")),
     "S7": Case("lab-services", "root", lambda c: backend(c).update(user="1000:0")),
+    "S7b": Case("lab-services", "root", lambda c: backend(c).update(user="-0")),
     "S8": Case("lab-services", "joins no network", worker(network_mode="none", networks=None)),
     "S9": Case("compose-file", "could not render", lambda c: backend(c)["networks"].append("undeclared")),
     "S10": Case(
@@ -260,13 +271,13 @@ CASES = {
 }
 
 
-def table():
-    """The rows of docs/lab.md: id, and the rules its last column names before any colon."""
+def table(path=TABLE):
+    """The rows of a table such as docs/lab.md: id, and the rules its last column names before any colon."""
     from contract.rules import RULES  # the checker's own, so a renamed rule shows
 
     known = {fn.rule_id for fn in RULES}
     rows = {}
-    for line in TABLE.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         found = re.match(r"^\| ([FNVSL][0-9]+[a-z]?) \|.*\| (.+) \|$", line)
         if found:
             named = found.group(2).split(":", 1)[0]
@@ -298,16 +309,16 @@ class TheLabsRefusals(unittest.TestCase):
 
 
 class APrototypeOnly(unittest.TestCase):
-    """Production has no such policy: a Project is not held to the lab's rules."""
+    """A Project is held to production's list, tests/test_prod.py, and not to the lab's."""
 
     def test_a_project_with_what_the_lab_alone_refuses_passes(self):
         tree = merge(None)
         self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
         c = stack()
-        backend(c)["networks"] = {"web": None, "data": None, "app": {"aliases": ["api"]}}
-        c["services"]["frontend"]["networks"] = ["web", "app"]
-        c["networks"]["app"] = {}
         label("traefik.http.routers.%(s)s-extra.rule", "Host(`${APP_HOST}`)")(c)
+        label("traefik.http.routers.%(s)s-extra.middlewares", "%s-extra-headers" % SLUG)(c)
+        label("traefik.http.middlewares.%(s)s-extra-headers.headers.customresponseheaders.X", "y")(c)
+        c["services"]["hello"] = c["services"].pop("frontend")
         write(tree, c)
         self.assertEqual([], check(tree)["violations"])
 

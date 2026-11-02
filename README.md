@@ -55,6 +55,9 @@ to fix their laptop.
 | `platform.schema.json` | The Manifest's schema. A Project points `$schema` at it for editor support; the checker reads it from its own checkout. |
 | `check.py` | The tier-1 entry point. |
 | `contract/rules.py` | The tier-1 rules. One function each, with the reason in its docstring. |
+| `contract/allowlist.py` | The list a deploy host holds a rendered Stack to, read once for both hosts. |
+| `contract/lab.py`, `contract/prod.py` | The `lab-*` rules, for a Prototype, and the `prod-*` rules, for a Project: each host's differences from the other. |
+| `docs/lab.md`, `docs/prod.md` | Every refusal of each host's list beside the rule that catches it. A test fails on a row without a case. |
 | `contract/compose.py` | Rendering the Stack, and reading the source for the rules a render erases. |
 | `contract/schema.py` | A JSON Schema validator covering exactly what the schema uses. |
 | `contract/project.py` | The tree under judgement, read once. |
@@ -235,6 +238,22 @@ read with `gh api`, carried `15368` on every required context and passed it.
 `REQUIRED_CONTEXTS`. `CONTRACT.md` says so in its `required-checks` passage,
 because a Project following it to the letter would otherwise be reported;
 the Projects' copies were already behind, at `v3.3.0`'s, and take this one.
+
+**`v3.7.0` is a minor for the reason `v3.5.0` is.** Its five `prod-*` rules
+refuse in a Project only what production's deploy refuses (`docs/prod.md`,
+each row checked against `doden-infra`'s `prod-deploy/compose-policy.jq`),
+so a Project they newly refuse is one production would not deploy
+(decision 65 of phase 5). On 2026-11-02, before they were written, both
+Projects' Compose files at `main` were rendered with their real values and
+passed production's list with no refusal, `20min-tracker` at
+`workout-tracker.doden.dev`; written, the rules passed both, and the
+Template with its Manifest filled in. The `lab-*` rules now read `user: "-0"`
+as root, as Docker does, and as the lab's deploy has since ticket 76 (gap 10).
+The render no longer takes the calling shell's environment, only the five
+values the platform supplies and what the docker CLI needs to find its
+plugin, so a key written with no value is a secret in CI, on a laptop and on
+the host alike: `SHELL:` was filled on a runner and null on the host. No
+other rule reads those values.
 
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned

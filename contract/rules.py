@@ -986,7 +986,8 @@ def image_size(project):
         )
 
 
-# The rules a Prototype is held to on the lab as well, in a module of their
-# own because they apply to it alone. Imported last, so they report after
-# the contract's own.
+# The lists each deploy host holds a Stack to: the lab's for a Prototype,
+# production's for a Project, in modules of their own because each applies
+# to one kind alone. Imported last, so they report after the contract's own.
 from . import lab  # noqa: E402,F401
+from . import prod  # noqa: E402,F401
