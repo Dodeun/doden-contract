@@ -108,6 +108,24 @@
       },
       "description": "Present only in a Prototype, and what makes it one (ADR-0015): a Project that may be thrown away, whose data nobody backs up, served under <slug>.lab.doden.dev. Its settings change by a commit like any other file. Removing the block is a promotion, not an edit."
     },
+    "preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generated"],
+      "properties": {
+        "generated": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "the name of an environment variable: letters, digits and _, not starting with a digit"
+          },
+          "description": "The secrets of the Stack a Preview gets as values drawn at random at each `preview start`, such as SESSION_SECRET or JWT_SECRET: they guard synthetic data, so they are not secrets there. Each is a key with no value in docker-compose.prod.yml. The `preview-generated` rule refuses a name the platform sets itself or the deploy reads."
+        }
+      },
+      "description": "Optional, and in a Project only: what a Preview of it needs that the platform can generate (decision 93 of phase 6). The Project's half of the Manifest, changed by a commit like its commands. A Preview gets these, DATABASE_URL pointing at a fresh lab database, DODEN_ENVIRONMENT=preview, and no other secret: a feature that needs an outside service's secret is absent there."
+    },
     "contractVersion": {
       "type": "string",
       "pattern": "^v[0-9]+$",

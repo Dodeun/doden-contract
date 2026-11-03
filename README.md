@@ -293,6 +293,16 @@ phase 6, ADR-0017); what it asks is below, under *The Projects' App*. On
 bypass list as it asks when read with the operator's login, and neither
 held a deploy key.
 
+**`v3.10.0` is a minor: it newly refuses nothing that passed.** It brings
+the Previews' two halves of decision 93 of phase 6. `prod-services` refuses
+`DODEN_ENVIRONMENT` in a Release's Compose file, with a value or without
+one, as production's list does, so no Release can open the demo sign-in a
+Project writes for its Previews. And the Manifest may carry a `preview`
+block, the values a Preview generates, which `preview-generated` holds to
+secrets of the Stack the platform does not set. On 2026-11-03 neither
+`20min-tracker` nor `jobs-finder` at `main`, nor the Template, named the
+variable or had the block: both Projects passed.
+
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned
 *version*, not the text, so a prose fix cannot refuse every Project at once —

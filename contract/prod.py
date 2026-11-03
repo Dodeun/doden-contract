@@ -42,7 +42,7 @@ import re
 
 from . import compose
 from .allowlist import SLUG, AllowList, show
-from .rules import rule
+from .rules import Violation, rule
 
 PREFIX = compose.SENTINEL["IMAGE_REPO_PREFIX"]
 TAG = compose.SENTINEL["IMAGE_TAG"]
@@ -74,6 +74,18 @@ FORBIDDEN_SECRETS = (
 FORBIDDEN_SECRET_PREFIXES = (
     "BASH_FUNC_", "LD_", "DOCKER_", "COMPOSE_", "BUILDKIT_", "DOPPLER_", "PROD_DEPLOY_",
 )
+
+# What the lab sets on a Preview, and a Project reads to open its demo
+# sign-in (decision 93). Refused with a value and without one: a key with no
+# value is a secret Doppler fills, so refusing `=preview` alone would leave
+# that path open.
+PREVIEW_ONLY = "DODEN_ENVIRONMENT"
+
+# What `preview start` sets on a Preview itself, beside the names above:
+# the lab's database, the switch, and the key the agent calls it with
+# (decision 50). A generated value of one of these names would be replaced,
+# or would replace it.
+PREVIEW_SETS = ("DATABASE_URL", PREVIEW_ONLY, "APP_API_KEY")
 
 
 class Production(AllowList):
@@ -130,6 +142,12 @@ class Production(AllowList):
                        + " with " + ", ".join(options) + ": a volume is mounted whole, "
                        "with nocopy at most, and production reads no other option.")
         for key, value in sorted((definition.get("environment") or {}).items()):
+            if key == PREVIEW_ONLY:
+                yield ("service " + name + " sets " + PREVIEW_ONLY + ", which the lab "
+                       "sets on a Preview alone, to open its demo sign-in: production "
+                       "refuses it with a value or without one, so no Release can "
+                       "carry it.")
+                continue
             if value is not None:
                 continue
             if not _SECRET_NAME.fullmatch(key):
@@ -205,6 +223,8 @@ def prod_services(project):
     older Release must deploy, or a rollback is refused at the worst moment
     (decision 69). The image is the Project's own, at the commit. A secret
     of a name docker or the deploy reads would act on the deploy itself.
+    And no `DODEN_ENVIRONMENT`, the Preview's switch, set or taken from
+    Doppler (decision 93).
     """
     if PRODUCTION.applies(project):
         yield from PRODUCTION.refuse("prod-services", PRODUCTION.services(project))
@@ -219,3 +239,55 @@ def prod_labels(project):
     """
     if PRODUCTION.applies(project):
         yield from PRODUCTION.refuse("prod-labels", PRODUCTION.labels(project))
+
+
+@rule("preview-generated", "the values a Preview generates are secrets of the Stack the platform does not set", needs_render=True)
+def preview_generated(project):
+    """The Manifest's `preview` block: names a Preview gets drawn at random.
+
+    A Preview runs this Project's production Stack in the lab, against
+    synthetic data, so what guards that data, a session or token signing
+    key, is generated at each start and is no secret (decision 93). Each
+    name is a key the Stack takes with no value: one it does not take
+    would reach no container, and is a typo. None is a name the platform
+    sets on a Preview itself or the deploy reads. A Prototype has no
+    Preview, so no block.
+    """
+    if project.manifest is None:
+        return  # the Manifest rule already said so
+    block = project.manifest.get("preview")
+    if block is None:
+        return
+    if project.prototype is not None:
+        yield Violation(
+            "preview-generated",
+            'platform.json declares a "preview" block and a "prototype" block. '
+            "A Preview is of a Project, never of a Prototype, which runs in the "
+            "lab already: remove the preview block, or remove the prototype "
+            "block by a promotion.",
+        )
+        return
+    secrets = {
+        key
+        for _, definition in project.services
+        for key, value in (definition.get("environment") or {}).items()
+        if value is None
+    }
+    for name in block["generated"]:
+        if name in PREVIEW_SETS or name in FORBIDDEN_SECRETS or name.startswith(FORBIDDEN_SECRET_PREFIXES):
+            yield Violation(
+                "preview-generated",
+                'the "preview" block generates ' + name + ", a name the platform "
+                "sets on a Preview itself (" + ", ".join(PREVIEW_SETS) + ") or "
+                "that docker, bash or the deploy reads. A generated value is for "
+                "the Stack: name it otherwise.",
+            )
+        elif name not in secrets:
+            yield Violation(
+                "preview-generated",
+                'the "preview" block generates ' + name + ", and no service of "
+                "docker-compose.prod.yml takes it as a secret, a key with no "
+                "value. A Preview hands the Stack its generated values through "
+                "those keys alone, so this one would reach no container: "
+                + (("it takes " + ", ".join(sorted(secrets)) + ".") if secrets else "it takes none."),
+            )

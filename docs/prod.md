@@ -113,6 +113,8 @@ to refuse, before the `prod-*` rules see it.
 | S14 | a volume mounted with an option other than `nocopy`: `subpath` among them | `prod-services` |
 | S15 | a secret, an environment key with no value that the render does not fill, that is not the name of an environment variable | `prod-services` |
 | S16 | a secret of a name docker, bash or the deploy itself reads: `PATH`, `HOME`, `DOCKER_HOST`, `DOCKER_CONFIG`, `LD_PRELOAD` and the like | `prod-services` |
+| S17 | `DODEN_ENVIRONMENT` with a value, the switch the lab sets on a Preview alone (decision 93) | `prod-services` |
+| S17b | `DODEN_ENVIRONMENT` with no value, a secret Doppler would fill with it | `prod-services` |
 
 ## Labels
 
