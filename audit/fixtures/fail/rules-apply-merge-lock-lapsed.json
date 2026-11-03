@@ -1,0 +1,34 @@
+{
+  "fires": [
+    "rules-apply"
+  ],
+  "why": "The merge lock is listed, says `active`, and GitHub does not apply it: what a lapsed plan is expected to look like, and on this rule the Projects' App merging its own pull requests.",
+  "settings": {
+    "applied_branch_rules": [
+      {
+        "type": "deletion",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      },
+      {
+        "type": "non_fast_forward",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      },
+      {
+        "type": "pull_request",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      },
+      {
+        "type": "required_status_checks",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "fires": [
+    "projects-app-cannot-widen"
+  ],
+  "why": "Narrower than decision 82 is not a risk today, and it is not the App the platform was built for: a Preview downloads its images with Actions read, and the request that puts it back is the click this rule watches.",
+  "settings": {
+    "registered_permissions": {
+      "actions": null
+    },
+    "granted_permissions": {
+      "actions": null
+    }
+  }
+}

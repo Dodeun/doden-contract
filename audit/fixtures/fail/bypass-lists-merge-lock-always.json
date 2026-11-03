@@ -1,0 +1,17 @@
+{
+  "fires": [
+    "bypass-lists"
+  ],
+  "why": "In `always` mode the operator passes the merge lock by a push as well as by a pull request. `pull_request` mode is what keeps the operator's own way onto the default branch a merged pull request.",
+  "rulesets": {
+    "merge-is-the-operators": {
+      "bypass_actors": [
+        {
+          "actor_id": 110058158,
+          "actor_type": "User",
+          "bypass_mode": "always"
+        }
+      ]
+    }
+  }
+}

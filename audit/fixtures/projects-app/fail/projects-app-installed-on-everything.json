@@ -1,0 +1,9 @@
+{
+  "fires": [
+    "projects-app-cannot-widen"
+  ],
+  "why": "Installed on all repositories, the agent writes to every repository of the account: the platform's own, and every Prototype.",
+  "settings": {
+    "repository_selection": "all"
+  }
+}

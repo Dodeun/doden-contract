@@ -1,0 +1,11 @@
+{
+  "fires": [
+    "projects-app-cannot-widen"
+  ],
+  "why": "Requested and not yet accepted: one click on the installation's review page from deleting a Project or changing its rulesets, which is both locks gone.",
+  "settings": {
+    "registered_permissions": {
+      "administration": "write"
+    }
+  }
+}

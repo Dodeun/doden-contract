@@ -1,0 +1,16 @@
+{
+  "fires": [
+    "projects-app-sees-no-prototype"
+  ],
+  "why": "The App's own token reads metadata alone, so a repository off the list has a Manifest nobody read: whether it is a Prototype is unknown, and the agent writes to a repository nothing audits.",
+  "settings": {
+    "repositories": [
+      "Dodeun/example-project",
+      "Dodeun/something-else"
+    ],
+    "topics": {
+      "Dodeun/example-project": [],
+      "Dodeun/something-else": []
+    }
+  }
+}

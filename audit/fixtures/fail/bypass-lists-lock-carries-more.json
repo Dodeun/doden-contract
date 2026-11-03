@@ -1,0 +1,21 @@
+{
+  "fires": [
+    "bypass-lists"
+  ],
+  "why": "A bypass lifts every rule of the ruleset it is in (measured 2026-11-03). A lock that also carries `deletion` is no longer a lock, and the operator's bypass there lifts the deletion protection with it.",
+  "rulesets": {
+    "merge-is-the-operators": {
+      "rules": [
+        {
+          "type": "update",
+          "parameters": {
+            "update_allows_fetch_and_merge": false
+          }
+        },
+        {
+          "type": "deletion"
+        }
+      ]
+    }
+  }
+}

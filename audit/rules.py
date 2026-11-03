@@ -66,6 +66,16 @@ TAG_PATTERN = "refs/tags/v*"
 DEFAULT_BRANCH_CONDITION = "~DEFAULT_BRANCH"
 EVERYTHING = "~ALL"
 
+# The two locks of badge 2 (decision 84 of phase 6, ADR-0017): the rule on
+# each, and how the operator, its one bypass, gets past it. Merging needs
+# Contents write alone, which the Projects' App holds, so no withheld
+# permission stops the App merging and only `update` on the default branch
+# does; a tag is a push of a ref, so only `creation` on `v*` stops it tagging.
+# `pull_request` mode lets the operator past the merge lock by merging a pull
+# request and never by a push; a tag is pushed, so its bypass is `always`.
+MERGE_LOCK = ("branch", "update", "pull_request")
+TAG_LOCK = ("tag", "creation", "always")
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -137,28 +147,14 @@ def _enforced(rulesets) -> set:
     return {r["type"] for rs in rulesets for r in rs.get("rules", [])}
 
 
-def _ruleset_integrity(rule_id: str, rulesets, what: str):
-    """Findings that apply to any ruleset the platform relies on.
+def _exclusions(rule_id: str, rulesets):
+    """An exclusion is a hole in any ruleset the platform relies on.
 
-    A bypass list is the shape drift takes in practice. Nobody removes a
-    ruleset; somebody adds themselves to its bypass list to get one thing
-    done, and the ruleset stays green on the settings page ever after. The
-    runbook's line is that an exception added once is the same as not having
-    the rule, so this reads it that way.
+    Who may bypass one is judged apart, by `bypass-lists`, because it is the
+    one field a read-only token cannot see.
     """
     for rs in rulesets:
         name = rs.get("name", "?")
-        actors = rs.get("bypass_actors") or []
-        if actors:
-            who = ", ".join(
-                str(a.get("actor_type", a.get("actor_id", "?"))) for a in actors
-            )
-            yield Finding(
-                rule_id,
-                f"ruleset `{name}` has a bypass list ({who}). {what} that "
-                "somebody can bypass is protection until the first time it "
-                "is inconvenient: empty the list, including for the owner.",
-            )
         excluded = (
             rs.get("conditions", {}).get("ref_name", {}).get("exclude") or []
         )
@@ -168,6 +164,11 @@ def _ruleset_integrity(rule_id: str, rulesets, what: str):
                 f"ruleset `{name}` excludes {', '.join(excluded)} from its "
                 "own condition, so those refs are governed by nothing it says.",
             )
+
+
+def _unlocked(rulesets) -> list:
+    """The rulesets that are not one of badge 2's two locks (see `_lock_of`)."""
+    return [rs for rs in rulesets if _lock_of(rs) is None]
 
 
 def _inactive(settings, target: str, *patterns) -> list:
@@ -205,8 +206,10 @@ def protect_main(settings, platform):
     also what makes ADR-0008's "main is always releasable" enforced rather
     than merely reported.
     """
-    covering = _active(settings, "branch", DEFAULT_BRANCH_CONDITION, EVERYTHING)
-    literal = _active(settings, "branch", f"refs/heads/{settings.default_branch}")
+    # A lock is not what protects history, so it neither covers the branch
+    # here nor hides a literal pattern that does.
+    covering = _unlocked(_active(settings, "branch", DEFAULT_BRANCH_CONDITION, EVERYTHING))
+    literal = _unlocked(_active(settings, "branch", f"refs/heads/{settings.default_branch}"))
     if not covering and not literal:
         for rs in _inactive(settings, "branch", DEFAULT_BRANCH_CONDITION, EVERYTHING):
             yield Finding(
@@ -225,7 +228,7 @@ def protect_main(settings, platform):
         return
 
     relied_on = _once(covering, literal)
-    for finding in _ruleset_integrity("protect-main", relied_on, "A branch"):
+    for finding in _exclusions("protect-main", relied_on):
         yield finding
 
     if literal and not covering:
@@ -335,7 +338,7 @@ def protect_releases(settings, platform):
     deploy workflow closes the rest by refusing a tag whose commit is not an
     ancestor of the default branch.
     """
-    covering = _active(settings, "tag", TAG_PATTERN, EVERYTHING)
+    covering = _unlocked(_active(settings, "tag", TAG_PATTERN, EVERYTHING))
     if not covering:
         for rs in _inactive(settings, "tag", TAG_PATTERN, EVERYTHING):
             yield Finding(
@@ -359,7 +362,7 @@ def protect_releases(settings, platform):
         )
         return
 
-    for finding in _ruleset_integrity("protect-releases", covering, "A tag"):
+    for finding in _exclusions("protect-releases", covering):
         yield finding
 
     enforced = _enforced(covering)
@@ -381,7 +384,8 @@ def protect_releases(settings, platform):
 
 @rule(
     "rules-apply",
-    "GitHub applies the rules the rulesets declare for the default branch",
+    "GitHub applies the rules the rulesets declare for the default branch, "
+    "and the two locks are among them",
     needs=lambda settings: settings.applied_branch_rules is not None,
 )
 def rules_apply(settings, platform):
@@ -408,6 +412,14 @@ def rules_apply(settings, platform):
     default branch is the canary for both: a plan that stops applying one
     ruleset of a repository stops applying the other, and the finding says
     so rather than staying quiet about tags.
+
+    **The two locks are required here** (decision 84 of phase 6), because no
+    other rule asks for them: `update` applied to the default branch, which
+    alone stops the Projects' App merging, and `creation` declared on `v*`,
+    which alone stops it tagging. The tag's is read from the rulesets, there
+    being nothing else to read. Every Project carries both, with the agent
+    or without: `project new` writes them, and a Project that later joins
+    the installation by a click must not be the one without.
     """
     declaring = _once(
         _active(settings, "branch", DEFAULT_BRANCH_CONDITION, EVERYTHING),
@@ -415,9 +427,34 @@ def rules_apply(settings, platform):
     )
     declared = _enforced(declaring)
     applied = {r.get("type") for r in settings.applied_branch_rules}
+
+    branch_lock, tag_lock = MERGE_LOCK[1], TAG_LOCK[1]
+    if branch_lock not in declared and branch_lock not in applied:
+        yield Finding(
+            "rules-apply",
+            f"no active ruleset puts `{branch_lock}` on "
+            f"{settings.default_branch}, so anything holding Contents write "
+            "can merge a pull request, the Projects' App included: merging "
+            "needs nothing more (ADR-0017). Add `merge-is-the-operators`, as "
+            "`project new` writes it.",
+        )
+    if tag_lock not in _enforced(_active(settings, "tag", TAG_PATTERN, EVERYTHING)):
+        yield Finding(
+            "rules-apply",
+            f"no active tag ruleset covering `{TAG_PATTERN}` carries "
+            f"`{tag_lock}`, so anything holding Contents write can create a "
+            "release tag, the Projects' App included, and a tag is what "
+            "deploys (ADR-0017). Add `tags-are-the-operators`, as "
+            "`project new` writes it.",
+        )
+
+    locks = [rs for rs in _relied_on(settings) if _lock_of(rs) is not None]
+    for finding in _exclusions("rules-apply", locks):
+        yield finding
+
     lost = [
         name
-        for name in APPLIED_BRANCH_RULES
+        for name in APPLIED_BRANCH_RULES + (branch_lock,)
         if name in declared and name not in applied
     ]
     if not lost:
@@ -437,6 +474,134 @@ def rules_apply(settings, platform):
         "reports no applied rules for a tag, so the release tags are very "
         "likely unprotected too. Check the account's plan first.",
     )
+
+
+def _relied_on(settings) -> list:
+    """Every active ruleset covering the default branch or the release tags."""
+    return _once(
+        _active(settings, "branch", DEFAULT_BRANCH_CONDITION, EVERYTHING),
+        _active(settings, "branch", f"refs/heads/{settings.default_branch}"),
+        _active(settings, "tag", TAG_PATTERN, EVERYTHING),
+    )
+
+
+def _lock_of(ruleset):
+    """The lock this ruleset is, if it carries a lock's rule and nothing else.
+
+    Read from what the ruleset does, never from its name, like every rule
+    here. A ruleset carrying a lock's rule *and* another is not a lock: a
+    bypass lifts every rule of the ruleset it is in (measured 2026-11-03), so
+    an operator's bypass there would lift the other rule too.
+    """
+    types = {r.get("type") for r in ruleset.get("rules", [])}
+    for lock in (MERGE_LOCK, TAG_LOCK):
+        if ruleset.get("target") == lock[0] and types == {lock[1]}:
+            return lock
+    return None
+
+
+def _bypass_visible(settings) -> bool:
+    """GitHub sends `bypass_actors` only to a token that may write the ruleset.
+
+    So a read-only token gets no field, and that is not an empty list: read
+    as one, it would report a list nobody saw. Without the field on every
+    ruleset relied on, or without the owner to compare against, who
+    bypasses is a question this run could not answer, and the rule says so.
+    """
+    return settings.owner_id is not None and all(
+        "bypass_actors" in rs for rs in _relied_on(settings)
+    )
+
+
+def _actors(actors) -> str:
+    return ", ".join(
+        f"{a.get('actor_type', '?')} {a.get('actor_id', '?')} "
+        f"(`{a.get('bypass_mode', '?')}`)"
+        for a in actors
+    )
+
+
+@rule(
+    "bypass-lists",
+    "the operator alone bypasses the two locks, and nobody bypasses anything else",
+    needs=_bypass_visible,
+)
+def bypass_lists(settings, platform):
+    """A bypass list is the shape drift takes in practice.
+
+    Nobody removes a ruleset; somebody adds themselves to its bypass list to
+    get one thing done, and the ruleset stays green on the settings page ever
+    after. An exception added once is the same as not having the rule, so
+    every ruleset the platform relies on has an empty list - except the two
+    locks of badge 2, whose whole point is one bypass: the operator, as
+    `User`, the repository's owner on a personal account, and nobody else
+    (decision 84 of phase 6). The Projects' App in a lock's list is the lock
+    gone; the admin role there would also let a write deploy key through.
+    """
+    for rs in _relied_on(settings):
+        name = rs.get("name", "?")
+        actors = rs["bypass_actors"]
+        lock = _lock_of(rs)
+        if lock is None:
+            if actors:
+                yield Finding(
+                    "bypass-lists",
+                    f"ruleset `{name}` has a bypass list ({_actors(actors)}). A "
+                    "ruleset that somebody can bypass is protection until the "
+                    "first time it is inconvenient: empty the list, including "
+                    "for the owner.",
+                )
+            continue
+        target, kind, mode = lock
+        wanted = [{"actor_id": settings.owner_id, "actor_type": "User", "bypass_mode": mode}]
+        got = [
+            {k: a.get(k) for k in ("actor_id", "actor_type", "bypass_mode")}
+            for a in actors
+        ]
+        if got == wanted:
+            continue
+        what = "merge into the default branch" if target == "branch" else "create a release tag"
+        if not got:
+            yield Finding(
+                "bypass-lists",
+                f"ruleset `{name}` carries `{kind}` and nobody bypasses it, so "
+                f"nobody can {what}, the operator included. Its bypass is the "
+                f"owner, as `User` {settings.owner_id}, in `{mode}` mode.",
+            )
+            continue
+        yield Finding(
+            "bypass-lists",
+            f"ruleset `{name}` carries `{kind}` and is bypassed by "
+            f"{_actors(actors)}. Whoever bypasses it can {what}, so it is the "
+            f"owner's alone: `User` {settings.owner_id}, in `{mode}` mode, and "
+            "nobody else (ADR-0017).",
+        )
+
+
+@rule(
+    "no-write-deploy-key",
+    "the Project holds no deploy key that can write",
+    needs=lambda settings: settings.deploy_keys is not None,
+)
+def no_write_deploy_key(settings, platform):
+    """A write deploy key is both locks gone, whoever their bypass names.
+
+    Measured 2026-11-03 on badge-2-trial: a write deploy key pushed a `v*`
+    tag past `tags-are-the-operators` with the admin role as its bypass, and
+    again with the operator as `User`. It has the owner's bypass, and nothing
+    beyond it - but the owner's bypass is exactly what the locks keep for one
+    person, and a key is a file anyone who copies it holds.
+    """
+    for key in settings.deploy_keys:
+        if key.get("read_only") is True:
+            continue
+        yield Finding(
+            "no-write-deploy-key",
+            f"deploy key `{key.get('title', '?')}` (id {key.get('id', '?')}) "
+            "can write. A write deploy key pushes with the owner's bypass, so "
+            "whoever holds it merges and creates release tags past both locks "
+            "(ADR-0017). Delete it, or replace it with a read-only one.",
+        )
 
 
 @rule("contract-version", "the Project pins the contract version that is current")
@@ -607,13 +772,13 @@ APP_RULES: list = []
 WIDENING_PERMISSION = "installation_repositories"
 
 
-def app_rule(rule_id: str, summary: str):
-    """Register a rule over the App. `summary` is printed beside its verdict."""
+def app_rule(rule_id: str, summary: str, registry: list = APP_RULES):
+    """Register a rule over an App. `summary` is printed beside its verdict."""
 
     def register(fn):
         fn.rule_id = rule_id
         fn.summary = summary
-        APP_RULES.append(fn)
+        registry.append(fn)
         return fn
 
     return register
@@ -674,4 +839,137 @@ def app_sees_no_project(app, projects):
                 f"{project} is in {app.slug}'s installation, so an agent "
                 "holding the App can administer and delete it (ADR-0012). "
                 "Remove it from the installation's repository access.",
+            )
+
+
+# The rules over the Projects' GitHub App (ADR-0017), the agent's credential on
+# an established Project. Each takes the App's `AppSettings` and the Projects
+# on the list, as a mapping of each name to its `Settings`, or to None when the
+# Project could not be read; the Prototypes' App needs only the names.
+PROJECTS_APP_RULES: list = []
+
+# Exactly what decision 82 of phase 6 grants it, and nothing else. Without
+# Workflows it cannot edit `.github/workflows/`, where secrets are named;
+# without Administration it cannot delete a Project or change its rulesets;
+# without `installation_repositories` it cannot widen its own installation.
+PROJECTS_APP_PERMISSIONS = {
+    "actions": "read",
+    "contents": "write",
+    "metadata": "read",
+    "pull_requests": "write",
+}
+
+# The topic every Prototype carries (decision 26 of phase 4), and the Manifest
+# block that makes a repository one.
+PROTOTYPE = "prototype"
+
+
+def _permission_drift(held: dict) -> str:
+    """What differs from the four permissions, in words, or "" if nothing."""
+    parts = []
+    for name in sorted(set(held) | set(PROJECTS_APP_PERMISSIONS)):
+        have, want = held.get(name), PROJECTS_APP_PERMISSIONS.get(name)
+        if have == want:
+            continue
+        if want is None:
+            parts.append(f"`{name}: {have}`, which it must not have")
+        elif have is None:
+            parts.append(f"no `{name}`, where it should have `{want}`")
+        else:
+            parts.append(f"`{name}: {have}`, where it should have `{want}`")
+    return "; ".join(parts)
+
+
+@app_rule(
+    "projects-app-cannot-widen",
+    "the agent's App holds its four permissions, no more, on selected repositories",
+    registry=PROJECTS_APP_RULES,
+)
+def projects_app_cannot_widen(app, projects):
+    """Decision 98 of phase 6: a widening clicked once and forgotten.
+
+    Workflows or Administration, accepted once to clear an error, is the one
+    change that drops both locks, and only a key of the App sees it. So the
+    permissions are held to exactly the four, in both places: granted is
+    held today, requested is one click on the installation's review page
+    from being held. A narrower App is reported too: it is not the App the
+    platform was built for, and the next request to put it right is the
+    click this rule watches.
+    """
+    granted = _permission_drift(app.granted_permissions)
+    if granted:
+        yield Finding(
+            "projects-app-cannot-widen",
+            f"{app.slug}'s installation holds {granted}. Its token is the "
+            "agent's on every installed Project, and the platform grants it "
+            "exactly Contents write, Pull requests write, Actions read and "
+            "Metadata (ADR-0017). Put the App's settings back to those four.",
+        )
+    requested = _permission_drift(app.registered_permissions)
+    if requested and requested != granted:
+        yield Finding(
+            "projects-app-cannot-widen",
+            f"{app.slug}'s settings request {requested}, which its "
+            "installation has not accepted yet. Accepted, its token would "
+            "hold it on every installed Project (ADR-0017). Put the settings "
+            "back rather than accepting it.",
+        )
+    if app.repository_selection != "selected":
+        yield Finding(
+            "projects-app-cannot-widen",
+            f"{app.slug} is installed on `{app.repository_selection}` "
+            "repositories rather than on selected ones, so the agent can "
+            "write to every repository of the account, the platform's own and "
+            "every Prototype included. Change the installation to only "
+            "select repositories, and select the Projects.",
+        )
+
+
+@app_rule(
+    "projects-app-sees-no-prototype",
+    "no Prototype is in the agent's App's installation",
+    registry=PROJECTS_APP_RULES,
+)
+def projects_app_sees_no_prototype(app, projects):
+    """A Prototype is the other App's, and promotion moves it, never copies it.
+
+    A Prototype in this installation is one an agent reaches by two Apps,
+    and one `project promote` forgot to move (decision 97 of phase 6). It is
+    known by its topic, which the installation listing carries, and by the
+    `prototype` block of its Manifest, which the audit reads for a Project on
+    its list with `AUDIT_TOKEN`. The App's own token is minted for metadata
+    alone and cannot read a Manifest, so a repository in the installation
+    that is not on the list is a question this run cannot answer, and it is
+    reported rather than passed. A Project on the list that could not be read
+    is already reported as such, and is not reported twice.
+    """
+    listed = {name.lower(): settings for name, settings in projects.items()}
+    for repository in app.repositories:
+        if PROTOTYPE in app.topics.get(repository, []):
+            yield Finding(
+                "projects-app-sees-no-prototype",
+                f"{repository} carries the `{PROTOTYPE}` topic and is in "
+                f"{app.slug}'s installation. A Prototype belongs to the "
+                "Prototypes' App alone: promote it, or remove it from this "
+                "installation's repository access.",
+            )
+            continue
+        if repository.lower() not in listed:
+            yield Finding(
+                "projects-app-sees-no-prototype",
+                f"{repository} is in {app.slug}'s installation and is not on "
+                "the audit's list, so its Manifest was not read and whether it "
+                "is a Prototype is unknown. The agent can write to it, and "
+                "nothing audits it. Add it to the list if it is a Project, or "
+                "remove it from the installation.",
+            )
+            continue
+        settings = listed[repository.lower()]
+        if settings is not None and PROTOTYPE in (settings.manifest or {}):
+            yield Finding(
+                "projects-app-sees-no-prototype",
+                f"{repository}'s Manifest has a `{PROTOTYPE}` block and it is "
+                f"in {app.slug}'s installation. A Prototype belongs to the "
+                "Prototypes' App alone: finish its promotion, or remove it "
+                "from this installation's repository access.",
             )

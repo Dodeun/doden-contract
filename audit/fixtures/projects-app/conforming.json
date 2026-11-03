@@ -1,0 +1,22 @@
+{
+  "slug": "doden-projects",
+  "registered_permissions": {
+    "actions": "read",
+    "contents": "write",
+    "metadata": "read",
+    "pull_requests": "write"
+  },
+  "granted_permissions": {
+    "actions": "read",
+    "contents": "write",
+    "metadata": "read",
+    "pull_requests": "write"
+  },
+  "repository_selection": "selected",
+  "repositories": [
+    "Dodeun/example-project"
+  ],
+  "topics": {
+    "Dodeun/example-project": []
+  }
+}

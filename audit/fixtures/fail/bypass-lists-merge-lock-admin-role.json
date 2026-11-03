@@ -1,0 +1,17 @@
+{
+  "fires": [
+    "bypass-lists"
+  ],
+  "why": "The admin role is a bypass a write deploy key inherits, measured by others and again on badge-2-trial, and it is not the operator alone. The lock is the operator's, as `User`, and nobody else's.",
+  "rulesets": {
+    "merge-is-the-operators": {
+      "bypass_actors": [
+        {
+          "actor_id": 5,
+          "actor_type": "RepositoryRole",
+          "bypass_mode": "always"
+        }
+      ]
+    }
+  }
+}

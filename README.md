@@ -285,6 +285,14 @@ any trigger but those and `workflow_dispatch`, a `workflow_run` checking out
 its `head_sha` or an `issue_comment` a pull request's head; none of them has
 one.
 
+**`v3.9.0` is a minor because it is tier 2.** It changes the audit alone,
+judged centrally, and no Project's files, as `v3.1.0` and `v3.2.0` did, so
+`CONTRACT.md` is left as it is. It watches badge 2 (decisions 84 and 98 of
+phase 6, ADR-0017); what it asks is below, under *The Projects' App*. On
+2026-11-03 both live Projects carried the four rulesets it requires, each
+bypass list as it asks when read with the operator's login, and neither
+held a deploy key.
+
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned
 *version*, not the text, so a prose fix cannot refuse every Project at once —
@@ -367,3 +375,45 @@ the listing is done. A list naming the App with no key is exit **2**, never a
 skipped App, and the Projects are still reported. Recorded App settings
 are judged with `--app-settings`, beside `--settings`; the fixtures are in
 `audit/fixtures/app/`.
+
+**The Projects' App** (since `v3.9.0`). `doden-projects` is the agent's
+credential on an established Project (ADR-0017): Contents write, Pull
+requests write, Actions read and Metadata. Merging needs Contents write
+alone, so two rulesets, not permissions, keep merging and tagging the
+operator's. Three Project rules and two App rules watch it:
+
+- `rules-apply` also requires `update` applied to the default branch and
+  `creation` on an active tag ruleset covering `refs/tags/v*`, for every
+  Project, with the agent or without. GitHub reports no applied rules for a
+  tag, so the tag lock is read from the rulesets.
+- `bypass-lists` holds each lock, a ruleset carrying `update` on the branch
+  or `creation` on `v*` and nothing else, to one bypass: the repository's
+  owner, the operator, as `User`, in `pull_request` mode for the merge lock
+  and `always` for the tag lock. Every other ruleset covering the default
+  branch or `v*` has an empty list. This judgement was `protect-main`'s and
+  `protect-releases`' before. **An absent list is not an empty one**: GitHub
+  sends `bypass_actors` only to a token that may write the ruleset, and a
+  read-only `AUDIT_TOKEN` gets no field. The rule is then *not checked*, and
+  the report says so, on the Project's line in Discord too.
+- `no-write-deploy-key` fails on any deploy key with `read_only: false`. A
+  write deploy key pushes with the owner's bypass, whichever actor the locks
+  name (measured on 2026-11-03). Listing keys needs `Administration: read`,
+  and a refusal is exit **2**, never *not checked*.
+- `projects-app-cannot-widen` fails unless the App's settings request, and
+  its installation holds, exactly those four permissions, and unless the
+  installation is on selected repositories.
+- `projects-app-sees-no-prototype` fails on a repository in its installation
+  with the `prototype` topic, or whose Manifest has a `prototype` block. The
+  App's token is minted for metadata alone and cannot read a Manifest, so a
+  repository in the installation that is not on the list is reported too:
+  whether it is a Prototype is unknown, and nothing audits it.
+
+The list names it beside the first App, `"projectsApp": { "slug":
+"doden-projects", "appId": ..., "installationId": ... }`, and
+`PROJECTS_APP_PRIVATE_KEY` holds one of its keys, spent as the first App's
+is, its topics read by the same metadata-only token. One App's key never
+stands for the other's. A list naming no `projectsApp` is exit **2**, as a missing
+key is: skipped, its rules would pass by not running. With it on the list, every report names the
+Projects with the agent and those without, and says so when the App could
+not be read. Recorded, it is judged with `--projects-app-settings`; the
+fixtures are in `audit/fixtures/projects-app/`.

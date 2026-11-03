@@ -1,0 +1,15 @@
+{
+  "fires": [
+    "no-write-deploy-key"
+  ],
+  "why": "A write deploy key pushes with the owner's bypass, whichever actor the locks name: on badge-2-trial one created a `v*` tag past `tags-are-the-operators` both ways. It is a file, and anyone who copies it holds both locks.",
+  "settings": {
+    "deploy_keys": [
+      {
+        "id": 140000001,
+        "title": "ci-push",
+        "read_only": false
+      }
+    ]
+  }
+}

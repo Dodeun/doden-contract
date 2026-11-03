@@ -72,6 +72,61 @@
           "type": "update"
         }
       ]
+    },
+    {
+      "id": 3,
+      "name": "merge-is-the-operators",
+      "target": "branch",
+      "enforcement": "active",
+      "bypass_actors": [
+        {
+          "actor_id": 110058158,
+          "actor_type": "User",
+          "bypass_mode": "pull_request"
+        }
+      ],
+      "conditions": {
+        "ref_name": {
+          "include": [
+            "~DEFAULT_BRANCH"
+          ],
+          "exclude": []
+        }
+      },
+      "rules": [
+        {
+          "type": "update",
+          "parameters": {
+            "update_allows_fetch_and_merge": false
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "tags-are-the-operators",
+      "target": "tag",
+      "enforcement": "active",
+      "bypass_actors": [
+        {
+          "actor_id": 110058158,
+          "actor_type": "User",
+          "bypass_mode": "always"
+        }
+      ],
+      "conditions": {
+        "ref_name": {
+          "include": [
+            "refs/tags/v*"
+          ],
+          "exclude": []
+        }
+      },
+      "rules": [
+        {
+          "type": "creation"
+        }
+      ]
     }
   ],
   "manifest": {
@@ -102,6 +157,15 @@
   },
   "applied_branch_rules": [
     {
+      "type": "update",
+      "parameters": {
+        "update_allows_fetch_and_merge": false
+      },
+      "ruleset_source_type": "Repository",
+      "ruleset_source": "Dodeun/example-project",
+      "ruleset_id": 3
+    },
+    {
       "type": "deletion",
       "ruleset_source_type": "Repository",
       "ruleset_source": "Dodeun/example-project",
@@ -125,5 +189,7 @@
       "ruleset_source": "Dodeun/example-project",
       "ruleset_id": 1
     }
-  ]
+  ],
+  "owner_id": 110058158,
+  "deploy_keys": []
 }
