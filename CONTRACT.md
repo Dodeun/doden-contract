@@ -522,6 +522,70 @@ production host makes, and a single-stage image ships the build tree —
 compilers, dev dependencies, caches — to production and over that quota on
 every deploy.
 
+### `branch-code-holds-no-secret` — a workflow that runs a branch's code holds nothing worth taking
+
+A Project and a Prototype alike. An agent working on a Project can push a
+branch and open a pull request; it cannot edit `.github/workflows/`, merge,
+or create a `v*` tag. It does edit what the workflows run — the scripts, the
+Dockerfiles, the tests — so a workflow that runs a branch's code runs what
+that branch says, beside whatever the workflow holds. Such a workflow:
+
+- **names no secret but `GITHUB_TOKEN`**, and passes none on with
+  `secrets: inherit`. A secret in its environment is one the branch can
+  send anywhere;
+- **grants no `write`**, at the workflow's level or a job's. `read` is
+  fine, and `packages: read` is enough to pull an image. GHCR tags can be
+  overwritten, so `packages: write` would let a branch replace an image a
+  rollback pulls;
+- **says so.** With no `permissions:` key, at the top of the file or on each
+  job, the token gets the repository's default, which may be write.
+
+A workflow runs a branch's code when it runs on:
+
+- `pull_request`, `pull_request_review`, `pull_request_review_comment` or
+  `create`, each of which runs the code of a branch whoever pushed it chose;
+- `release`, which runs the release's tag, and a tag that is not `v*`, with
+  a release on it, needs no more than pushing a branch;
+- a `push` whose `branches:` are not `main` alone, or whose `tags:` are not
+  `v*` alone. A `push` with neither filter runs on every branch, and one
+  with `branches-ignore:` or `tags-ignore:` on everything it does not name;
+- any other trigger but `workflow_dispatch` — `repository_dispatch`,
+  `workflow_run`, `issue_comment`, `schedule` — when its `actions/checkout`
+  names a `ref:` other than the default branch: a dispatch's payload, a
+  `workflow_run`'s `head_sha`, a pull request's head. Sending a dispatch or
+  a comment needs no more than pushing a branch, so its sender chooses that
+  ref.
+
+**Refused in any workflow**, whatever it runs on:
+
+- `pull_request_target`, which holds the secrets and a token that can write
+  while a pull request's code is one checkout away. `pull_request` runs the
+  same code, and this rule keeps it holding neither;
+- `github.event.client_payload`, or `github.event` whole as in
+  `toJSON(github.event)`, inside `${{ }}` in a `run:` block or in the
+  `script:` of `actions/github-script`. The expression is pasted into the
+  code before it runs, so the event's sender would be writing code. It goes
+  through `env:`, and the script checks it;
+- an `actions/checkout` whose `with:` is one expression, since the ref it
+  checks out cannot be read.
+
+**What passes, and why.** Only a merge reaches `main` and only the operator
+creates a `v*` tag, so a workflow on those runs reviewed code: `build.yml`
+may write packages and `deploy.yml` may hold the deploy key.
+`workflow_dispatch` is not a branch's code, though it runs any ref and
+`build.yml`'s has `packages: write`: dispatching needs Actions write, which
+no agent's credential holds, so only the operator picks the ref. The
+Template's `lab-redeploy.yml` runs on `repository_dispatch` with the lab's
+key and passes: it checks out the default branch, and refuses a payload
+naming any other commit. The same file checking out the payload's ref is
+refused. A dispatch that checks out a branch and holds nothing passes.
+
+**What it reads.** Every file in `.github/workflows/`, with a YAML reader of
+the checker's own, which refuses anchors, aliases, tags and whatever else
+it does not implement: a workflow it cannot read is refused, never passed.
+It sees `actions/checkout`'s `ref:`, and not a ref a script fetches itself:
+a payload's ref passed through `env:` to `git fetch "$REF"` is unseen.
+
 ### `lab-file`, `lab-networks`, `lab-volumes`, `lab-services`, `lab-labels` — a Prototype asks the lab for nothing it refuses
 
 **A Prototype only.** Its Stack is deployed by the control host, and the

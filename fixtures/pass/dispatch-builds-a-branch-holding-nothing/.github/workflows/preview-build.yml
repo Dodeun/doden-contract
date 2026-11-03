@@ -1,0 +1,16 @@
+# The ref the dispatch names, built with nothing to lose: no secret, no write.
+name: Build a Preview's images
+on:
+  repository_dispatch:
+    types: [preview-build]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.client_payload.ref }}
+      - name: Build the images
+        run: bash scripts/build-images.sh

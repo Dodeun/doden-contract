@@ -1,0 +1,16 @@
+# A checkout whose ref is one expression away from being read.
+name: Report on the tests
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: ${{ fromJSON(vars.CHECKOUT) }}
+      - name: Report
+        run: bash scripts/report.sh

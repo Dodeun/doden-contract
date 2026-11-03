@@ -1,0 +1,17 @@
+# After the tests, on the default branch's code: it may hold the webhook.
+name: Report on the tests
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Post the result
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: bash scripts/notify.sh

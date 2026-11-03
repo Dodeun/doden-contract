@@ -1,0 +1,16 @@
+# A pull request's code, granted write to the registry by its job.
+name: Tests
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the tests
+        run: docker compose -f docker-compose.test.yml run --rm test

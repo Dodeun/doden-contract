@@ -1,0 +1,11 @@
+# A pull request's code, with whatever token the repository's default gives.
+name: Tests
+on:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the tests
+        run: docker compose -f docker-compose.test.yml run --rm test

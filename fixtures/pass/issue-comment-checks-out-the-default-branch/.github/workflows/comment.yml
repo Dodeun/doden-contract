@@ -1,0 +1,16 @@
+# A comment, answered by the default branch's code: it may hold the webhook.
+name: Act on a comment
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  act:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Act on it
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: bash scripts/notify.sh

@@ -1,0 +1,16 @@
+# A review runs the pull request's code as pull_request does, secrets and all.
+name: Act on a review
+on:
+  pull_request_review:
+    types: [submitted]
+permissions:
+  contents: read
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Post it
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: bash scripts/notify.sh
