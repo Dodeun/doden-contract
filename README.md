@@ -295,9 +295,10 @@ held a deploy key.
 
 **`v3.10.0` is a minor: it newly refuses nothing that passed.** It brings
 the Previews' two halves of decision 93 of phase 6. `prod-services` refuses
-`DODEN_ENVIRONMENT` in a Release's Compose file, with a value or without
-one, as production's list does, so no Release can open the demo sign-in a
-Project writes for its Previews. And the Manifest may carry a `preview`
+`DODEN_ENVIRONMENT` in a Release's Compose file `environment`, with a value
+or without one and in any case, as production's list does, so a Release
+does not pass the switch of the demo sign-in a Project writes for its
+Previews. And the Manifest may carry a `preview`
 block, the values a Preview generates, which `preview-generated` holds to
 secrets of the Stack the platform does not set. On 2026-11-03 neither
 `20min-tracker` nor `jobs-finder` at `main`, nor the Template, named the

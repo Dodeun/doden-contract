@@ -78,7 +78,9 @@ FORBIDDEN_SECRET_PREFIXES = (
 # What the lab sets on a Preview, and a Project reads to open its demo
 # sign-in (decision 93). Refused with a value and without one: a key with no
 # value is a secret Doppler fills, so refusing `=preview` alone would leave
-# that path open.
+# that path open. And in any case: Node reads it exactly, but some
+# configuration libraries match names without case (pydantic-settings by
+# default), so `doden_environment` could open the same route.
 PREVIEW_ONLY = "DODEN_ENVIRONMENT"
 
 # What `preview start` sets on a Preview itself, beside the names above:
@@ -86,6 +88,9 @@ PREVIEW_ONLY = "DODEN_ENVIRONMENT"
 # (decision 50). A generated value of one of these names would be replaced,
 # or would replace it.
 PREVIEW_SETS = ("DATABASE_URL", PREVIEW_ONLY, "APP_API_KEY")
+# What the lab's deploy reads besides production's list: a Preview is
+# rendered and started there, and lab-deploy.sh refuses these as a secret.
+PREVIEW_RESERVED_PREFIXES = FORBIDDEN_SECRET_PREFIXES + ("LAB_DEPLOY_", "LAB_PREVIEW_")
 
 
 class Production(AllowList):
@@ -142,8 +147,8 @@ class Production(AllowList):
                        + " with " + ", ".join(options) + ": a volume is mounted whole, "
                        "with nocopy at most, and production reads no other option.")
         for key, value in sorted((definition.get("environment") or {}).items()):
-            if key == PREVIEW_ONLY:
-                yield ("service " + name + " sets " + PREVIEW_ONLY + ", which the lab "
+            if key.upper() == PREVIEW_ONLY:
+                yield ("service " + name + " sets " + key + ", which the lab "
                        "sets on a Preview alone, to open its demo sign-in: production "
                        "refuses it with a value or without one, so no Release can "
                        "carry it.")
@@ -274,12 +279,13 @@ def preview_generated(project):
         if value is None
     }
     for name in block["generated"]:
-        if name in PREVIEW_SETS or name in FORBIDDEN_SECRETS or name.startswith(FORBIDDEN_SECRET_PREFIXES):
+        if name in PREVIEW_SETS or name in FORBIDDEN_SECRETS or name.startswith(PREVIEW_RESERVED_PREFIXES):
             yield Violation(
                 "preview-generated",
                 'the "preview" block generates ' + name + ", a name the platform "
                 "sets on a Preview itself (" + ", ".join(PREVIEW_SETS) + ") or "
-                "that docker, bash or the deploy reads. A generated value is for "
+                "that docker, bash, production's deploy or the lab's reads. A "
+                "generated value is for "
                 "the Stack: name it otherwise.",
             )
         elif name not in secrets:

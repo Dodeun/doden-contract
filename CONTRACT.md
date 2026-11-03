@@ -150,8 +150,10 @@ an OAuth client, a mailbox or a model provider, is absent there, and the
 Project boots without it when `DODEN_ENVIRONMENT` is `preview`. Sign-in
 there is the Project's own demo sign-in, into an account its seed creates,
 and the route exists only then. Production refuses `DODEN_ENVIRONMENT` in
-the Compose file, with a value or without one (`prod-services`), so no
-Release can open it.
+the Compose file's `environment`, with a value or without one, in any case
+(`prod-services`). That is the one place a Project passes it; a `command`
+or an image's own `ENV` that sets it is not read by either list, and is the
+Project's mistake to avoid.
 
 The Profile runs both on every CI run, against a throwaway database, because
 a declared command nobody has run is a Manifest field that is false.
@@ -516,8 +518,8 @@ Each name in the `preview` block is a key some service of
 generated values through those keys alone, so another name reaches no
 container and is a typo. None is `DATABASE_URL`, `DODEN_ENVIRONMENT` or
 `APP_API_KEY`, which the platform sets on a Preview itself, nor a name
-docker, bash or the deploy reads, the list `prod-services` refuses as a
-secret. A Prototype has no Preview, so a Manifest with a `prototype` block
+docker, bash or a deploy reads: the list `prod-services` refuses as a
+secret, and the lab's `LAB_DEPLOY_` and `LAB_PREVIEW_`. A Prototype has no Preview, so a Manifest with a `prototype` block
 has no `preview` block.
 
 ### `healthchecks` — every service declares one
@@ -707,9 +709,9 @@ deploy, after a release tag that cannot be moved:
   `PATH`, `HOME`, `DOCKER_HOST`, `LD_PRELOAD` and their like. The five
   values the platform supplies, and `PWD` and `COMPOSE_PROJECT_NAME`, which
   Compose sets itself, written with no value, are filled by the render,
-  there and here, and are not secrets. No `DODEN_ENVIRONMENT`, with a value
-  or without one: the lab sets it on a Preview alone, to open the
-  Project's demo sign-in, so no Release may carry it;
+  there and here, and are not secrets. No `DODEN_ENVIRONMENT` in a service's
+  `environment`, with a value or without one, in any case: the lab sets it
+  on a Preview alone, to open the Project's demo sign-in;
 - **labels:** as the lab's, with routers, Traefik services and middlewares
   named `${PROJECT_SLUG}`, `${PROJECT_SLUG}-<suffix>` or
   `${PROJECT_SLUG}_<suffix>`, a router answering for `Host` of the

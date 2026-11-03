@@ -1,8 +1,5 @@
-# A conforming production Stack, with the database Add-on declared.
-#
-# This is the fixture every failing example is an overlay on, so it is
-# deliberately the smallest Stack that still has something for every tier-1
-# rule to judge: two services, both routed, one of them on `data`.
+# The base fixture's Stack, with SESSION_SECRET taken with no value: the
+# secret the Manifest's `preview` block generates for a Preview.
 name: ${PROJECT_SLUG:?PROJECT_SLUG is not set}
 
 services:

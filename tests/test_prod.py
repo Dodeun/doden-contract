@@ -139,6 +139,7 @@ CASES = {
         lambda c: backend(c)["environment"].update(DODEN_ENVIRONMENT="preview"),
     ),
     "S17b": ProjectCase("prod-services", "DODEN_ENVIRONMENT", secret("DODEN_ENVIRONMENT")),
+    "S17c": ProjectCase("prod-services", "doden_environment", secret("doden_environment")),
     "L1": ProjectCase("prod-labels", "belongs to Docker Compose", label("com.docker.compose.project", "another")),
     "L2": ProjectCase("prod-labels", "traefik.enable is yes", worker(labels={"traefik.enable": "yes"})),
     "L3": ProjectCase("traefik-labels", "traefik.docker.network=web", label("traefik.docker.network", "data")),
