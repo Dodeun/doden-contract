@@ -412,7 +412,8 @@ The list names it beside the first App, `"projectsApp": { "slug":
 "doden-projects", "appId": ..., "installationId": ... }`, and
 `PROJECTS_APP_PRIVATE_KEY` holds one of its keys, spent as the first App's
 is, its topics read by the same metadata-only token. One App's key never
-stands for the other's. With it on the list, every report names the
+stands for the other's. A list naming no `projectsApp` is exit **2**, as a missing
+key is: skipped, its rules would pass by not running. With it on the list, every report names the
 Projects with the agent and those without, and says so when the App could
 not be read. Recorded, it is judged with `--projects-app-settings`; the
 fixtures are in `audit/fixtures/projects-app/`.

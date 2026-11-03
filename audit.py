@@ -41,6 +41,11 @@ from audit.rules import APP_RULES, PROJECTS_APP_RULES, RULES, Platform  # noqa: 
 from audit.settings import AppSettings, Settings, fetch, fetch_app  # noqa: E402
 
 
+# Where the list names the Projects' App, the agent's (ADR-0017). Required on
+# a run over the real list: see `run`.
+PROJECTS_APP_ENTRY = "projectsApp"
+
+
 def platform() -> Platform:
     """The contract as it is in this checkout - the thing Projects are held to.
 
@@ -154,6 +159,7 @@ def run(
     app_key: str | None = None,
     projects_app: "AppSettings | dict | None" = None,
     projects_app_key: str | None = None,
+    projects_app_required: bool = False,
 ) -> dict:
     """Audit every Project on the list, and keep going past one that fails.
 
@@ -172,6 +178,11 @@ def run(
     With the Projects' App on the list, the verdict carries `agent`: the
     Projects with the agent and those without, or `unknown` when the App
     could not be read.
+
+    `projects_app_required` is set for a run over the real list: a list that
+    names no Projects' App is then unreadable, as a missing key is. Skipped
+    in silence, the App's rules would pass by not running, and the report
+    would drop the agent line it owes on every run.
     """
     audited = []
     unreadable = []
@@ -205,6 +216,14 @@ def run(
             reach = agent(found, names)
         else:
             reach = {"app": projects_app["slug"], "unknown": True}
+    elif projects_app_required:
+        unreadable.append({
+            "app": PROJECTS_APP_ENTRY,
+            "error": f"the list names no `{PROJECTS_APP_ENTRY}`, so the agent's "
+                     "App, doden-projects, was not audited at all and which "
+                     "Projects have the agent is unknown (ADR-0017).",
+        })
+        reach = {"app": PROJECTS_APP_ENTRY, "unknown": True}
     result = {
         "contractVersion": against.contract_version,
         "checkedAt": date.today().isoformat(),
@@ -344,7 +363,7 @@ def main(argv=None) -> int:
         else:
             entries = read_projects(args.projects)
             app = read_app(args.projects)
-            projects_app = read_app(args.projects, "projectsApp")
+            projects_app = read_app(args.projects, PROJECTS_APP_ENTRY)
             token = os.environ.get("AUDIT_TOKEN")
             if not token:
                 raise AuditError(
@@ -357,7 +376,8 @@ def main(argv=None) -> int:
             app_key = os.environ.get("APP_PRIVATE_KEY")
             projects_app_key = os.environ.get("PROJECTS_APP_PRIVATE_KEY")
         result = run(
-            entries, against, token, app, app_key, projects_app, projects_app_key
+            entries, against, token, app, app_key, projects_app, projects_app_key,
+            projects_app_required=not args.settings,
         )
     except AuditError as exc:
         print("the audit could not run: " + str(exc), file=sys.stderr)

@@ -1635,6 +1635,44 @@ class TheProjectsAppsKey(AuditTestCase):
         self.assertIn("App doden-projects: PROJECTS_APP_PRIVATE_KEY is not set", proc.stdout)
         self.assertNotIn("Traceback", proc.stderr)
 
+    def test_a_list_naming_no_projects_app_is_exit_2(self):
+        """Absent from the list, the App's rules would pass by not running,
+        and the report would drop its agent line. It is said, as a missing
+        key is."""
+        proc = self.run_list({"projects": [], "app": self.APP}, APP_PRIVATE_KEY="")
+        self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
+        self.assertIn("App projectsApp: the list names no `projectsApp`", proc.stdout)
+        self.assertIn("which Projects it reaches is unknown", proc.stdout)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_the_absent_entry_is_posted_with_the_projects(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import report
+
+        spec = importlib.util.spec_from_file_location(
+            "doden_audit_absent", self.home / "audit.py"
+        )
+        entry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(entry)
+        result = entry.run(
+            [entry.Settings.from_dict(merge({}))], entry.platform(), None,
+            projects_app_required=True,
+        )
+        self.assertFalse(result["ok"])
+        self.assertEqual({"app": "projectsApp", "unknown": True}, result["agent"])
+        message = report.discord_message(result)
+        self.assertIn("✅ `Dodeun/example-project`", message)
+        self.assertIn("⚠️ App `projectsApp` could not be read", message)
+        self.assertIn("🤖 Agent (`projectsApp`): which Projects it reaches is unknown",
+                      message)
+
+    def test_recorded_settings_ask_for_no_projects_app(self):
+        """`--settings` judges what was recorded; an App left out of the
+        recording is a fixture's choice, not a list that forgot it."""
+        result, status = self.audit(merge({}))
+        self.assertEqual(0, status, result)
+        self.assertNotIn("agent", result)
+
     def test_one_apps_key_does_not_stand_for_the_other(self):
         """Each App has its own key, and one sees nothing of the other."""
         proc = self.run_list(
