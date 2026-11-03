@@ -1,0 +1,13 @@
+# The whole event pasted into a script: a pull request's title is in it.
+name: Report the event
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show it
+        run: echo '${{ toJSON(github.event) }}'

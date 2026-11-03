@@ -1,0 +1,18 @@
+# A comment, answered by the pull request's code: a branch's code beside the webhook.
+name: Act on a comment
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  act:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/head
+      - name: Act on it
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: bash scripts/notify.sh

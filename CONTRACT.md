@@ -547,19 +547,25 @@ A workflow runs a branch's code when it runs on:
 - a `push` whose `branches:` are not `main` alone, or whose `tags:` are not
   `v*` alone. A `push` with neither filter runs on every branch, and one
   with `branches-ignore:` or `tags-ignore:` on everything it does not name;
-- a `repository_dispatch` whose `actions/checkout` names a `ref:` other than
-  the default branch. Sending a dispatch needs no more than pushing a
-  branch, so its sender chooses that ref.
+- any other trigger but `workflow_dispatch` — `repository_dispatch`,
+  `workflow_run`, `issue_comment`, `schedule` — when its `actions/checkout`
+  names a `ref:` other than the default branch: a dispatch's payload, a
+  `workflow_run`'s `head_sha`, a pull request's head. Sending a dispatch or
+  a comment needs no more than pushing a branch, so its sender chooses that
+  ref.
 
 **Refused in any workflow**, whatever it runs on:
 
 - `pull_request_target`, which holds the secrets and a token that can write
   while a pull request's code is one checkout away. `pull_request` runs the
-  same code holding neither;
-- `github.event.client_payload` inside `${{ }}` in a `run:` block. The
-  expression is pasted into the script before the shell reads it, so the
-  dispatch's sender would be writing shell. It goes through `env:`, and the
-  script checks it.
+  same code, and this rule keeps it holding neither;
+- `github.event.client_payload`, or `github.event` whole as in
+  `toJSON(github.event)`, inside `${{ }}` in a `run:` block or in the
+  `script:` of `actions/github-script`. The expression is pasted into the
+  code before it runs, so the event's sender would be writing code. It goes
+  through `env:`, and the script checks it;
+- an `actions/checkout` whose `with:` is one expression, since the ref it
+  checks out cannot be read.
 
 **What passes, and why.** Only a merge reaches `main` and only the operator
 creates a `v*` tag, so a workflow on those runs reviewed code: `build.yml`
@@ -575,7 +581,8 @@ refused. A dispatch that checks out a branch and holds nothing passes.
 **What it reads.** Every file in `.github/workflows/`, with a YAML reader of
 the checker's own, which refuses anchors, aliases, tags and whatever else
 it does not implement: a workflow it cannot read is refused, never passed.
-It sees `actions/checkout`'s `ref:`, and not a ref a script fetches itself.
+It sees `actions/checkout`'s `ref:`, and not a ref a script fetches itself:
+a payload's ref passed through `env:` to `git fetch "$REF"` is unseen.
 
 ### `lab-file`, `lab-networks`, `lab-volumes`, `lab-services`, `lab-labels` — a Prototype asks the lab for nothing it refuses
 

@@ -36,7 +36,13 @@ BRANCH_EVENTS = (
 TRUSTED_BRANCH = "main"
 TRUSTED_TAG_PREFIX = "v"
 
-# A checkout ref that names the default branch on a `repository_dispatch`,
+# The triggers whose checkout ref is not read: the events above are a
+# branch's code whatever they check out, a push is judged by its filters,
+# and `workflow_dispatch` is the operator's (`branch_code` says why).
+CHECKOUT_EXEMPT = BRANCH_EVENTS + ("push", "workflow_dispatch")
+
+# A checkout ref that names the default branch on every other trigger -
+# `repository_dispatch`, `workflow_run`, `issue_comment`, `schedule` -
 # whose GITHUB_SHA and GITHUB_REF are the default branch's head. Compared
 # with the spaces removed.
 DEFAULT_REFS = (
@@ -49,6 +55,8 @@ DEFAULT_REFS = (
 _EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.S)
 _SECRETS = re.compile(r"(?<![\w.-])secrets\b", re.I)
 _SECRET_NAME = re.compile(r"\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*'([^']*)'\s*\])")
+# `github.event` whole, as in toJSON(github.event): not `.x` of it, nor event_name.
+_WHOLE_EVENT = re.compile(r"github\s*\.\s*event\b(?!\s*[.\[])")
 
 
 def files(project):
@@ -125,12 +133,16 @@ def _outside(patterns, trusted):
     ]
 
 
+def _uses(step, action):
+    uses = step.get("uses")
+    return isinstance(uses, str) and uses.lower().startswith(action + "@")
+
+
 def _checkouts(workflow):
     """(job, ref) for every `actions/checkout` step naming a ref."""
     for job_name, job in jobs(workflow):
         for _, step in steps(job):
-            uses = step.get("uses")
-            if not isinstance(uses, str) or not uses.lower().startswith("actions/checkout@"):
+            if not _uses(step, "actions/checkout"):
                 continue
             given = step.get("with")
             ref = given.get("ref") if isinstance(given, dict) else None
@@ -150,12 +162,24 @@ def branch_code(workflow):
     reasons = ["on " + event for event in BRANCH_EVENTS if event in on]
     if "push" in on:
         reasons.extend(_push(on["push"]))
-    if "repository_dispatch" in on:
+    others = [event for event in on if event not in CHECKOUT_EXEMPT]
+    if others:
         for job_name, ref in _checkouts(workflow):
             if re.sub(r"\s+", "", ref) not in DEFAULT_REFS:
-                reasons.append("on repository_dispatch, where job " + job_name
-                               + " checks out " + ref)
+                reasons.append("on " + ", ".join(others) + ", where job "
+                               + job_name + " checks out " + ref)
     return reasons
+
+
+def _injected(text):
+    """What of the event a text pastes in through ${{ }}, as phrases."""
+    found = []
+    for expression in _EXPRESSION.findall(text):
+        if "client_payload" in expression:
+            found.append("github.event.client_payload")
+        elif _WHOLE_EVENT.search(expression):
+            found.append("the whole github.event")
+    return sorted(set(found))
 
 
 def _expressions(node, key=None):
@@ -207,17 +231,22 @@ def branch_code_holds_no_secret(project):
 
     A branch's code runs on `pull_request` and the events like it, on a
     `push` not limited to `main` or to `v*` tags - with no filter, on every
-    branch - and on a `repository_dispatch` that checks out a ref other
-    than the default branch. Such a workflow names no secret but
+    branch - and on any other trigger but `workflow_dispatch` whose
+    checkout names a ref other than the default branch: a
+    `repository_dispatch` naming the payload's, a `workflow_run` naming
+    its head_sha, an `issue_comment` naming a pull request's head. Such a workflow names no secret but
     `GITHUB_TOKEN`, passes none on with `secrets: inherit`, and grants no
     write, at its level or a job's. It must say so: with no `permissions:`
     key, the token gets the repository's default, which may be write.
 
     In every workflow: `pull_request_target` is refused, since it runs with
     the secrets and a write token beside a pull request's code as soon as a
-    step checks it out; and `github.event.client_payload` is refused inside a
-    `run:` block, where it is pasted into the script as text the sender of
-    the dispatch chose. It goes through `env:`, and the script checks it.
+    step checks it out; `github.event.client_payload`, or `github.event`
+    whole, is refused inside a `run:` block or `actions/github-script`'s
+    `script:`, where it is pasted into the code as text the sender of the
+    event chose - it goes through `env:`, and the script checks it; and a
+    checkout whose `with:` is one expression is refused, since its ref
+    cannot be read. A ref a script fetches itself, from `env:`, is unseen.
 
     The Template's `lab-redeploy.yml` runs on `repository_dispatch` with the
     lab's key, and passes: it checks out the default branch, and refuses a
@@ -263,24 +292,36 @@ def _everywhere(name, workflow):
             RULE,
             name + " runs on pull_request_target, which holds the "
             "repository's secrets and a token that can write while a pull "
-            "request's code is one checkout away. Use pull_request: it runs "
-            "the same code holding neither.",
+            "request's code is one checkout away. Use pull_request, which "
+            "this rule keeps holding neither.",
         )
     for job_name, job in jobs(workflow):
         for step_name, step in steps(job):
-            run = step.get("run")
-            if not isinstance(run, str):
-                continue
-            if any("client_payload" in found for found in _EXPRESSION.findall(run)):
+            where = name + ": job " + job_name + ", " + step_name + ", "
+            given = step.get("with")
+            code = [("its run: block", step.get("run"))]
+            if _uses(step, "actions/github-script") and isinstance(given, dict):
+                code.append(("the script: of actions/github-script", given.get("script")))
+            for place, text in code:
+                if not isinstance(text, str):
+                    continue
+                for pasted in _injected(text):
+                    yield Violation(
+                        RULE,
+                        where + "writes " + pasted + " into " + place + ". An "
+                        "expression there is pasted into the code before it "
+                        "runs, so whoever sent the event writes code. Pass "
+                        "it through env:, as VALUE: ${{ "
+                        "github.event.client_payload.value }}, and check "
+                        "the value in the code that reads it.",
+                    )
+            if _uses(step, "actions/checkout") and isinstance(given, str):
                 yield Violation(
                     RULE,
-                    name + ": job " + job_name + ", " + step_name + ", writes "
-                    "github.event.client_payload into its run: block. An "
-                    "expression there is pasted into the script before the "
-                    "shell reads it, so whoever sends the dispatch writes "
-                    "shell. Pass it through env:, as VALUE: ${{ "
-                    "github.event.client_payload.value }}, and check \"$VALUE\" "
-                    "in the script.",
+                    where + "gives actions/checkout its with: as one "
+                    "expression, so the ref it checks out cannot be read "
+                    "here, and may be one a branch chose. Write ref: as a "
+                    "key of its own.",
                 )
 
 

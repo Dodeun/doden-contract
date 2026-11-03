@@ -1,0 +1,15 @@
+# The payload pasted into JavaScript: whoever sends the dispatch writes code.
+name: Record a dispatch
+on:
+  repository_dispatch:
+    types: [record]
+permissions:
+  contents: read
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            core.info('asked for ${{ github.event.client_payload.commit }}')

@@ -75,3 +75,5 @@ Some fixtures exist to demonstrate something beyond their own rule:
 | `pass/dispatch-checks-out-the-default-branch` and `fail/dispatch-checks-out-the-payloads-ref` | The Template's `lab-redeploy.yml`, and the same file checking out the ref the payload names. One `ref:` is the whole difference. |
 | `pass/dispatch-builds-a-branch-holding-nothing` | A dispatch that does run a branch's code, and passes because it holds nothing: what the rule refuses is the pair, never a branch's code alone. |
 | `fail/workflow-unreadable` | An anchor, which GitHub reads and the checker's own YAML reader does not. Refused, because what cannot be read cannot be said to hold no secret. |
+| `fail/workflow-run-checks-out-the-head` and `fail/issue-comment-checks-out-a-pull-request` | Triggers that run the default branch's workflow and are made a branch's code by one `ref:`. Each has its pass beside it, the same file with no `ref:`. |
+| `fail/whole-event-in-run` | `toJSON(github.event)` in a script on a push to `main`: reviewed code, and still a pull request's title pasted into shell. |

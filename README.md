@@ -270,15 +270,20 @@ other rule reads those values.
 
 **`v3.8.0` is a minor: it newly refuses nothing that passed.** Its
 `branch-code-holds-no-secret` rule refuses a secret, a write permission or a
-missing `permissions:` key in a workflow that runs a branch's code, and
-`pull_request_target` or a `client_payload` pasted into a `run:` block in
-any workflow (decision 85 of phase 6), so that the agent of badge 2, which
+missing `permissions:` key in a workflow that runs a branch's code, and in
+any workflow `pull_request_target`, a `client_payload` or the whole
+`github.event` pasted into a `run:` block or a `github-script`, and a
+checkout whose `with:` is one expression (decision 85 of phase 6), so that
+the agent of badge 2, which
 can push a branch and cannot edit a workflow, never runs beside a secret.
 On 2026-11-03 `20min-tracker` and `jobs-finder` at `main`, and the Template
 with its Manifest filled in, passed it: `test.yml` and `profile.yml` run on
 `pull_request` with `contents: read` and no secret, `build.yml` pushes on
 `main` alone, `deploy.yml` on `v*` alone, and `lab-redeploy.yml` checks out
-the default branch.
+the default branch. A checkout naming another ref makes a branch's code of
+any trigger but those and `workflow_dispatch`, a `workflow_run` checking out
+its `head_sha` or an `issue_comment` a pull request's head; none of them has
+one.
 
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned

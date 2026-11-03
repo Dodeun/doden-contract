@@ -667,6 +667,45 @@ class BranchCodeHoldsNoSecret(FixtureCase):
             names="anchor",
         )
 
+    def test_a_workflow_run_on_the_default_branch_may_hold_a_key(self):
+        self.assertPasses("pass/workflow-run-checks-out-the-default-branch")
+
+    def test_a_workflow_run_checking_out_the_branch_that_ran_is_refused(self):
+        self.assertFails(
+            "fail/workflow-run-checks-out-the-head", "branch-code-holds-no-secret",
+            names="workflow_run.head_sha",
+        )
+
+    def test_a_comment_answered_by_the_default_branch_may_hold_a_key(self):
+        self.assertPasses("pass/issue-comment-checks-out-the-default-branch")
+
+    def test_a_comment_answered_by_the_pull_requests_code_is_refused(self):
+        self.assertFails(
+            "fail/issue-comment-checks-out-a-pull-request", "branch-code-holds-no-secret",
+            names="on issue_comment",
+        )
+
+    def test_a_checkout_whose_with_cannot_be_read_is_refused(self):
+        self.assertFails(
+            "fail/checkout-with-an-expression", "branch-code-holds-no-secret",
+            names="with: as one expression",
+        )
+
+    def test_the_whole_event_pasted_into_a_script_is_refused(self):
+        self.assertFails(
+            "fail/whole-event-in-run", "branch-code-holds-no-secret",
+            names="the whole github.event",
+        )
+
+    def test_github_script_reading_the_payload_from_env_passes(self):
+        self.assertPasses("pass/github-script-reads-the-payload-from-env")
+
+    def test_the_payload_pasted_into_github_script_is_refused(self):
+        self.assertFails(
+            "fail/client-payload-in-github-script", "branch-code-holds-no-secret",
+            names="actions/github-script",
+        )
+
     def test_a_prototype_is_held_to_it_as_well(self):
         self.assertFails(
             (PROTOTYPE, "fail/branch-code-names-a-secret"),

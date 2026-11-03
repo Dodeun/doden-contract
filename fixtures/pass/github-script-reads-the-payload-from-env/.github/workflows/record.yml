@@ -1,0 +1,17 @@
+# The payload read from env:, as data.
+name: Record a dispatch
+on:
+  repository_dispatch:
+    types: [record]
+permissions:
+  contents: read
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          COMMIT: ${{ github.event.client_payload.commit }}
+        with:
+          script: |
+            core.info('asked for ' + process.env.COMMIT)
