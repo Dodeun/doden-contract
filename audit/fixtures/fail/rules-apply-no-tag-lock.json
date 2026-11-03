@@ -1,0 +1,9 @@
+{
+  "fires": [
+    "rules-apply"
+  ],
+  "why": "Creating a tag is a push of a ref, which Contents write allows, and a tag is what deploys. Only `creation` on `v*` keeps release tags the operator's, and GitHub reports no applied rules for a tag, so the rulesets are all there is to read (ADR-0017).",
+  "rulesets": {
+    "tags-are-the-operators": null
+  }
+}

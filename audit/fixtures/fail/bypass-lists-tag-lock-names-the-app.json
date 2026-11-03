@@ -1,0 +1,22 @@
+{
+  "fires": [
+    "bypass-lists"
+  ],
+  "why": "The Projects' App in a lock's bypass list is the lock gone: it would create release tags, and a tag is what deploys.",
+  "rulesets": {
+    "tags-are-the-operators": {
+      "bypass_actors": [
+        {
+          "actor_id": 110058158,
+          "actor_type": "User",
+          "bypass_mode": "always"
+        },
+        {
+          "actor_id": 5592024,
+          "actor_type": "Integration",
+          "bypass_mode": "always"
+        }
+      ]
+    }
+  }
+}

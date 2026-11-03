@@ -1,0 +1,7 @@
+{
+  "fires": ["rules-apply"],
+  "why": "GitHub reports no applied rules for a tag, so a hole in the tag lock's own condition is visible only in the ruleset: here every `v1.*` tag can be created by anything holding Contents write, the Projects' App included.",
+  "rulesets": {
+    "tags-are-the-operators": { "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": ["refs/tags/v1.*"] } } }
+  }
+}

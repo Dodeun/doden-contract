@@ -1,0 +1,11 @@
+{
+  "fires": [
+    "bypass-lists"
+  ],
+  "why": "A tag lock nobody bypasses refuses the operator's release tags too. It fails loudly on the first release, and it is still not the lock the platform writes.",
+  "rulesets": {
+    "tags-are-the-operators": {
+      "bypass_actors": []
+    }
+  }
+}

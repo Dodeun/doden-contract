@@ -1,0 +1,21 @@
+{
+  "fires": [],
+  "not_checked": [
+    "bypass-lists"
+  ],
+  "why": "What a read-only token sees: GitHub sends `bypass_actors` only to a token that may write the ruleset, and the field is absent rather than empty. Read as empty it would report a list nobody saw, so the rule is not checked.",
+  "rulesets": {
+    "protect-main": {
+      "bypass_actors": null
+    },
+    "protect-releases": {
+      "bypass_actors": null
+    },
+    "merge-is-the-operators": {
+      "bypass_actors": null
+    },
+    "tags-are-the-operators": {
+      "bypass_actors": null
+    }
+  }
+}

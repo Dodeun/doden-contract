@@ -61,6 +61,14 @@ class Settings:
     # the rulesets declare. `None` is a question nobody answered, the same as
     # `variables`; `[]` is GitHub applying nothing at all.
     applied_branch_rules: list | None = None
+    # The repository's owner, by id. On a personal account the owner is the
+    # operator, and the operator is the one actor the two locks may name as
+    # their bypass (decision 84 of phase 6). `None` is a record that does not
+    # say, and the rule that reads it is then not checked.
+    owner_id: int | None = None
+    # The deploy keys, as GitHub lists them. `None` is a question nobody
+    # answered; `[]` is a Project with none.
+    deploy_keys: list | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Settings":
@@ -76,13 +84,18 @@ class Settings:
 
 @dataclass(frozen=True)
 class AppSettings:
-    """What the audit knows about the Prototypes' GitHub App (ADR-0012).
+    """What the audit knows about one of the platform's GitHub Apps.
 
-    Not a repository: the App's own settings and its one installation's.
+    The Prototypes' App (ADR-0012) or the Projects' (ADR-0017). Not a
+    repository: the App's own settings and its one installation's.
     `registered_permissions` are what the App's settings ask for, and
     `granted_permissions` what the installation has accepted - which is what
     a token minted from it actually carries. They differ for as long as a
     change to the App waits for the installation to accept it.
+
+    `topics` maps a repository of the installation to its topics. It is read
+    for the Projects' App alone, whose rule looks for the `prototype` topic,
+    so it is the one field a record may leave out.
     """
 
     slug: str
@@ -90,11 +103,14 @@ class AppSettings:
     granted_permissions: dict
     repository_selection: str
     repositories: list
+    topics: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, raw: dict) -> "AppSettings":
         """Build from a recorded payload, refusing the same two ways."""
-        return _from_record(cls, raw, set(cls.__dataclass_fields__), "recorded App settings")
+        return _from_record(
+            cls, raw, set(cls.__dataclass_fields__) - {"topics"}, "recorded App settings"
+        )
 
 
 def _from_record(cls, raw, required: set, what: str):
@@ -185,7 +201,15 @@ def fetch(repository: str, token: str) -> Settings:
     default_branch = repo.get("default_branch")
     if not default_branch:
         raise AuditError(f"{repository} names no default branch")
+    owner_id = (repo.get("owner") or {}).get("id")
+    if not isinstance(owner_id, int):
+        raise AuditError(f"{repository} names no owner")
 
+    # Each ruleset is kept as GitHub sent it, and that matters for one field.
+    # GitHub returns `bypass_actors` only to a token with write access to the
+    # ruleset (documented, and measured 2026-11-03 with the Projects' App),
+    # and a read-only token gets no field at all. An absent field is not an
+    # empty list, so nothing here fills one in.
     rulesets = []
     for summary in _get(f"/repos/{repository}/rulesets", token) or []:
         full = _get(f"/repos/{repository}/rulesets/{summary['id']}", token)
@@ -278,6 +302,32 @@ def fetch(repository: str, token: str) -> Settings:
     except NotPermitted:
         variables = None
 
+    # A write deploy key pushes as the owner, bypass included (measured
+    # 2026-11-03 on badge-2-trial), so one key is both locks gone. Unlike the
+    # variables, a refusal here is the audit failing and never a question
+    # left open: the token is documented to hold Administration: read, which
+    # is what this needs, and a token that lost it must not leave the run
+    # green. One page of 100, like the variables.
+    path = f"/repos/{repository}/keys?per_page=100"
+    try:
+        keys = _get(path, token)
+    except NotPermitted as exc:
+        raise AuditError(
+            f"{repository}: GitHub refused to list its deploy keys ({exc}). "
+            "AUDIT_TOKEN needs Administration: read on this repository."
+        ) from exc
+    if not isinstance(keys, list) or not all(isinstance(k, dict) for k in keys):
+        raise AuditError(
+            f"{repository}: GET {path} answered "
+            + ("404" if keys is None else "something other than a list")
+            + ", so whether it holds a write deploy key is unknown. It is not "
+            "reported as holding none."
+        )
+    deploy_keys = [
+        {"id": k.get("id"), "title": k.get("title"), "read_only": k.get("read_only")}
+        for k in keys
+    ]
+
     return Settings(
         repository=repository,
         default_branch=default_branch,
@@ -288,6 +338,8 @@ def fetch(repository: str, token: str) -> Settings:
         addon_documents=addon_documents,
         variables=variables,
         applied_branch_rules=applied_branch_rules,
+        owner_id=owner_id,
+        deploy_keys=deploy_keys,
     )
 
 
@@ -295,7 +347,7 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def _app_jwt(app_id, key: str) -> str:
+def _app_jwt(app_id, key: str, key_name: str = "APP_PRIVATE_KEY") -> str:
     """A JWT for the App, valid nine minutes, signed with its private key.
 
     GitHub refuses one valid for more than ten, and `iat` is set a minute in
@@ -324,14 +376,23 @@ def _app_jwt(app_id, key: str) -> str:
         )
     if signed.returncode != 0 or not signed.stdout:
         raise AuditError(
-            "the App's private key could not sign a JWT. APP_PRIVATE_KEY should "
+            f"the App's private key could not sign a JWT. {key_name} should "
             "hold the whole .pem file GitHub downloaded, header lines included."
         )
     return f"{head}.{claims}.{_b64url(signed.stdout)}"
 
 
-def fetch_app(app: dict, key: str) -> AppSettings:
-    """Read the Prototypes' App and the repositories its installation holds.
+def fetch_app(
+    app: dict, key: str, key_name: str = "APP_PRIVATE_KEY", topics: bool = False
+) -> AppSettings:
+    """Read an App and the repositories its installation holds.
+
+    The same for both Apps, the Prototypes' (ADR-0012) and the Projects'
+    (ADR-0017), each with its own key: one App's key sees nothing of the
+    other. `key_name` is the variable that held the key, named in what goes
+    wrong. `topics` reads each repository's topics too, which the Projects'
+    App's rule needs and the Prototypes' does not; the metadata-only token
+    can read them.
 
     No credential short of the App's own key can: measured 2026-10-04 by
     ticket 35's probe, a private App answers 404 to `GET /apps/{slug}` with
@@ -344,13 +405,13 @@ def fetch_app(app: dict, key: str) -> AppSettings:
     It is revoked as soon as the listing is done, whether or not it worked.
     """
     slug, installation = app["slug"], app["installationId"]
-    jwt = _app_jwt(app["appId"], key)
+    jwt = _app_jwt(app["appId"], key, key_name=key_name)
 
     me = _request("GET", "/app", jwt)
     if not isinstance(me, dict) or me.get("slug") != slug:
         found = me.get("slug") if isinstance(me, dict) else None
         raise AuditError(
-            f"the key in APP_PRIVATE_KEY belongs to {found}, not {slug}, so "
+            f"the key in {key_name} belongs to {found}, not {slug}, so "
             f"{slug} was not read."
             if found
             else f"GET /app did not answer with an App, so {slug} was not read."
@@ -374,8 +435,10 @@ def fetch_app(app: dict, key: str) -> AppSettings:
     if not isinstance(minted, dict) or not minted.get("token"):
         raise AuditError(f"{slug}'s installation {installation} minted no token.")
     token = minted["token"]
+    found_topics = {}
     try:
         repositories = []
+        listed_topics = {}
         page = 1
         while True:
             listed = _request(
@@ -396,6 +459,9 @@ def fetch_app(app: dict, key: str) -> AppSettings:
                     "shape GitHub documents, so which ones it holds is unknown."
                 )
             repositories.extend(r["full_name"] for r in batch)
+            listed_topics.update(
+                (r["full_name"], r["topics"]) for r in batch if isinstance(r.get("topics"), list)
+            )
             if len(repositories) >= total:
                 break
             if not batch:
@@ -404,6 +470,21 @@ def fetch_app(app: dict, key: str) -> AppSettings:
                     f"listed {len(repositories)}."
                 )
             page += 1
+        # The listing carries each repository's topics, and where one does not
+        # they are asked for, with the same token: Metadata: read is enough.
+        # A repository whose topics cannot be read is the audit unable to say
+        # whether it is a Prototype, and is never read as having none.
+        for name in repositories if topics else []:
+            names = listed_topics.get(name)
+            if names is None:
+                answer = _request("GET", f"/repos/{name}/topics", token)
+                names = answer.get("names") if isinstance(answer, dict) else None
+            if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+                raise AuditError(
+                    f"{slug}'s installation holds {name}, and its topics could "
+                    "not be read, so whether it is a Prototype is unknown."
+                )
+            found_topics[name] = sorted(names)
     finally:
         # The token expires within the hour anyway. A revocation that fails
         # is therefore not the audit failing, and must not hide a finding.
@@ -418,4 +499,5 @@ def fetch_app(app: dict, key: str) -> AppSettings:
         granted_permissions=held.get("permissions") or {},
         repository_selection=held.get("repository_selection", ""),
         repositories=sorted(repositories),
+        topics=found_topics,
     )

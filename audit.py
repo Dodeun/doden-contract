@@ -37,7 +37,7 @@ sys.path.insert(0, str(HERE))
 
 from audit import AuditError  # noqa: E402
 from audit import report as reporting  # noqa: E402
-from audit.rules import APP_RULES, RULES, Platform  # noqa: E402
+from audit.rules import APP_RULES, PROJECTS_APP_RULES, RULES, Platform  # noqa: E402
 from audit.settings import AppSettings, Settings, fetch, fetch_app  # noqa: E402
 
 
@@ -88,11 +88,11 @@ def audit_one(settings: Settings, against: Platform) -> dict:
     }
 
 
-def audit_app(app: AppSettings, projects: list) -> dict:
-    """The App's verdict, in the shape of a Project's."""
+def audit_app(app: AppSettings, projects, rules=APP_RULES) -> dict:
+    """An App's verdict, in the shape of a Project's."""
     checked = []
     findings = []
-    for fn in APP_RULES:
+    for fn in rules:
         found = list(fn(app, projects))
         findings.extend(found)
         checked.append(
@@ -106,12 +106,54 @@ def audit_app(app: AppSettings, projects: list) -> dict:
     }
 
 
+def agent(app: AppSettings, projects: list) -> dict:
+    """Which Projects on the list the agent can reach, and which it cannot.
+
+    Decision 83 of phase 6: every Project has the agent unless `--no-agent`
+    declined it, and adding or removing one later is a click in GitHub, so
+    every report says where it stands. Matched without case, as GitHub's
+    names are.
+    """
+    held = {name.lower() for name in app.repositories}
+    return {
+        "app": app.slug,
+        "with": [p for p in projects if p.lower() in held],
+        "without": [p for p in projects if p.lower() not in held],
+    }
+
+
+def read_one_app(entry, key: str | None, key_name: str, topics: bool, unreadable: list):
+    """One App: recorded, or read with its key. Returns its settings, or None.
+
+    An App that cannot be read - no key, a wrong one, an installation gone -
+    stops that App and nothing else, like a Project, and is added to
+    `unreadable`.
+    """
+    if isinstance(entry, AppSettings):
+        return entry
+    if not key:
+        unreadable.append({
+            "app": entry["slug"],
+            "error": f"{key_name} is not set. No credential short of the "
+                     "App's own key can read a private App, so it was not "
+                     "audited at all.",
+        })
+        return None
+    try:
+        return fetch_app(entry, key, key_name=key_name, topics=topics)
+    except AuditError as exc:
+        unreadable.append({"app": entry["slug"], "error": str(exc)})
+        return None
+
+
 def run(
     projects: list,
     against: Platform,
     token: str | None,
     app: "AppSettings | dict | None" = None,
     app_key: str | None = None,
+    projects_app: "AppSettings | dict | None" = None,
+    projects_app_key: str | None = None,
 ) -> dict:
     """Audit every Project on the list, and keep going past one that fails.
 
@@ -120,39 +162,50 @@ def run(
     Tuesday silently stops the other Projects being audited at all.
 
     `app` is the Prototypes' App: recorded `AppSettings`, or the list's entry
-    for it, read with `app_key`. It is judged against every Project on the
-    list, whether or not that Project could be read. An App that cannot be
-    read - no key, a wrong one, an installation gone - stops the App and
-    nothing else, like a Project: the Projects are still reported.
+    for it, read with `app_key`. `projects_app` is the Projects' App, the
+    agent's (ADR-0017), the same way with `projects_app_key`. Each is judged
+    against every Project on the list, whether or not that Project could be
+    read. An App that cannot be read - no key, a wrong one, an installation
+    gone - stops the App and nothing else, like a Project: the Projects are
+    still reported.
+
+    With the Projects' App on the list, the verdict carries `agent`: the
+    Projects with the agent and those without, or `unknown` when the App
+    could not be read.
     """
     audited = []
     unreadable = []
+    # Every Project on the list, by name, to what was read of it: None when it
+    # could not be read. The Projects' App's rules need the Manifests.
+    read = {}
     for entry in projects:
-        if isinstance(entry, Settings):
-            audited.append(audit_one(entry, against))
-            continue
+        name = entry.repository if isinstance(entry, Settings) else entry
         try:
-            audited.append(audit_one(fetch(entry, token), against))
+            settings = entry if isinstance(entry, Settings) else fetch(entry, token)
         except AuditError as exc:
             unreadable.append({"repository": entry, "error": str(exc)})
+            read[name] = None
+            continue
+        audited.append(audit_one(settings, against))
+        read[name] = settings
+    names = list(read)
+
     apps = []
     if app is not None:
-        names = [e.repository if isinstance(e, Settings) else e for e in projects]
-        if isinstance(app, AppSettings):
-            apps.append(audit_app(app, names))
-        elif not app_key:
-            unreadable.append({
-                "app": app["slug"],
-                "error": "APP_PRIVATE_KEY is not set. No credential short of the "
-                         "App's own key can read a private App, so it was not "
-                         "audited at all.",
-            })
+        found = read_one_app(app, app_key, "APP_PRIVATE_KEY", False, unreadable)
+        if found is not None:
+            apps.append(audit_app(found, names))
+    reach = None
+    if projects_app is not None:
+        found = read_one_app(
+            projects_app, projects_app_key, "PROJECTS_APP_PRIVATE_KEY", True, unreadable
+        )
+        if found is not None:
+            apps.append(audit_app(found, read, PROJECTS_APP_RULES))
+            reach = agent(found, names)
         else:
-            try:
-                apps.append(audit_app(fetch_app(app, app_key), names))
-            except AuditError as exc:
-                unreadable.append({"app": app["slug"], "error": str(exc)})
-    return {
+            reach = {"app": projects_app["slug"], "unknown": True}
+    result = {
         "contractVersion": against.contract_version,
         "checkedAt": date.today().isoformat(),
         "ok": all(p["ok"] for p in audited + apps) and not unreadable,
@@ -160,6 +213,9 @@ def run(
         "apps": apps,
         "unreadable": unreadable,
     }
+    if reach is not None:
+        result["agent"] = reach
+    return result
 
 
 def read_json(path: Path):
@@ -187,15 +243,16 @@ def read_projects(path: Path) -> list:
     return names
 
 
-def read_app(path: Path) -> dict | None:
-    """The list's entry for the Prototypes' App, or None if it names none.
+def read_app(path: Path, key: str = "app") -> dict | None:
+    """The list's entry for an App, or None if it names none.
 
-    `slug` names it in the report, `appId` signs its JWT and
-    `installationId` is the one installation whose repositories are read.
-    None of the three is a secret. The key is, and it is not here.
+    `app` is the Prototypes' App, `projectsApp` the Projects'. `slug` names
+    it in the report, `appId` signs its JWT and `installationId` is the one
+    installation whose repositories are read. None of the three is a
+    secret. The key is, and it is not here.
     """
     payload = read_json(path)
-    app = payload.get("app") if isinstance(payload, dict) else None
+    app = payload.get(key) if isinstance(payload, dict) else None
     if app is None:
         return None
     if not (
@@ -205,7 +262,7 @@ def read_app(path: Path) -> dict | None:
         and isinstance(app.get("installationId"), int)
     ):
         raise AuditError(
-            f"{path}: `app` should be an object with a `slug` string and the "
+            f"{path}: `{key}` should be an object with a `slug` string and the "
             "`appId` and `installationId` numbers"
         )
     return app
@@ -235,6 +292,12 @@ def main(argv=None) -> int:
         help="the Prototypes' App, recorded, judged with --settings - no key "
              "and no network",
     )
+    parser.add_argument(
+        "--projects-app-settings",
+        type=Path,
+        help="the Projects' App, the agent's, recorded, judged with --settings "
+             "- no key and no network",
+    )
     parser.add_argument("--json", action="store_true", help="emit the verdict as JSON")
     # Mutually exclusive rather than merely documented: `--message` promises
     # to post nothing, and a promise a flag combination can break is not one.
@@ -263,20 +326,25 @@ def main(argv=None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
 
-    if args.app_settings and not args.settings:
-        parser.error("--app-settings is recorded, and goes with --settings")
+    if (args.app_settings or args.projects_app_settings) and not args.settings:
+        parser.error("--app-settings and --projects-app-settings are recorded, "
+                     "and go with --settings")
 
     try:
         against = platform()
         app, app_key = None, None
+        projects_app, projects_app_key = None, None
         if args.settings:
             entries = [Settings.from_dict(read_json(p)) for p in args.settings]
             token = None
             if args.app_settings:
                 app = AppSettings.from_dict(read_json(args.app_settings))
+            if args.projects_app_settings:
+                projects_app = AppSettings.from_dict(read_json(args.projects_app_settings))
         else:
             entries = read_projects(args.projects)
             app = read_app(args.projects)
+            projects_app = read_app(args.projects, "projectsApp")
             token = os.environ.get("AUDIT_TOKEN")
             if not token:
                 raise AuditError(
@@ -287,7 +355,10 @@ def main(argv=None) -> int:
                     "Project."
                 )
             app_key = os.environ.get("APP_PRIVATE_KEY")
-        result = run(entries, against, token, app, app_key)
+            projects_app_key = os.environ.get("PROJECTS_APP_PRIVATE_KEY")
+        result = run(
+            entries, against, token, app, app_key, projects_app, projects_app_key
+        )
     except AuditError as exc:
         print("the audit could not run: " + str(exc), file=sys.stderr)
         return 2

@@ -36,6 +36,34 @@ def _marked(entry: dict) -> str:
     return f"App `{entry['app']}`" if "app" in entry else f"`{entry['repository']}`"
 
 
+# Said beside a rule that was not checked, when the reason is not the token's
+# permissions. GitHub sends a ruleset's `bypass_actors` only to a token that
+# may write the ruleset, so a read-only token sees no list at all.
+NOT_CHECKED_BECAUSE = {
+    "bypass-lists": "GitHub shows who bypasses a ruleset only to a token that "
+                    "may write it, and this one may not, so who bypasses was "
+                    "not seen.",
+}
+
+
+def _unchecked(project: dict) -> list:
+    return [e["rule"] for e in project["rules"] if e["status"] == "not checked"]
+
+
+def _names(names: list, mark: str = "") -> str:
+    return ", ".join(f"{mark}{n}{mark}" for n in names) or "none"
+
+
+def _agent_line(agent: dict, mark: str = "") -> str:
+    """Which Projects the agent reaches, said on every run (decision 83)."""
+    app = f"{mark}{agent['app']}{mark}"
+    if agent.get("unknown"):
+        return (f"Agent ({app}): which Projects it reaches is unknown, the App "
+                "could not be read.")
+    return (f"Agent ({app}) on: {_names(agent['with'], mark)}; "
+            f"not on: {_names(agent['without'], mark)}.")
+
+
 def text(result: dict) -> str:
     apps = result.get("apps", [])
     lines = [
@@ -44,6 +72,8 @@ def text(result: dict) -> str:
         + (f" and {len(apps)} App(s)" if apps else ""),
         "",
     ]
+    if "agent" in result:
+        lines += ["  " + _agent_line(result["agent"]), ""]
     for project in result["projects"] + apps:
         lines.append(f"  {_name(project)}")
         for entry in project["rules"]:
@@ -53,23 +83,25 @@ def text(result: dict) -> str:
         for finding in project["findings"]:
             lines.append(f"      {finding['rule']}: {finding['message']}")
         lines.append("")
-    if any(
-        entry["status"] == "not checked"
-        for project in result["projects"]
-        for entry in project["rules"]
-    ):
+    unchecked = {rule for project in result["projects"] for rule in _unchecked(project)}
+    if unchecked:
         lines.append(
             "  -- means the rule was not checked, not that it passed: the "
             "token this audit ran with could not read that setting."
         )
+        for rule in sorted(unchecked & set(NOT_CHECKED_BECAUSE)):
+            lines.append(f"  {rule}: {NOT_CHECKED_BECAUSE[rule]}")
         lines.append("")
     for failure in result["unreadable"]:
         lines.append(f"  {_name(failure)}: {failure['error']}")
     if result["unreadable"]:
         lines.append("")
     lines.append(
-        ("PASS: every Project's settings, and the App's, match the contract."
-         if apps else "PASS: every Project's settings match the contract.")
+        ("PASS: every Project's settings match the contract."
+         if not apps
+         else "PASS: every Project's settings, and the App's, match the contract."
+         if len(apps) == 1
+         else "PASS: every Project's settings, and the Apps', match the contract.")
         if result["ok"]
         else "FAIL: see above."
     )
@@ -85,11 +117,18 @@ def discord_message(result: dict) -> str:
     """One message. Which Project, which rule, and what to open."""
     head = f"**Platform Contract - tier 2 audit** - {result['checkedAt']}"
     lines = [head]
+    # Right under the head, where a message cut for length still keeps it.
+    if "agent" in result:
+        lines.append("🤖 " + _agent_line(result["agent"], "`"))
     for project in result["projects"] + result.get("apps", []):
+        # A rule not checked is said even on a green line: a pass that could
+        # not look must not read as one that looked.
+        unchecked = _unchecked(project)
+        suffix = f" - not checked: {', '.join(unchecked)}" if unchecked else ""
         if project["ok"]:
-            lines.append(f"✅ {_marked(project)}")
+            lines.append(f"✅ {_marked(project)}{suffix}")
             continue
-        lines.append(f"❌ {_marked(project)}")
+        lines.append(f"❌ {_marked(project)}{suffix}")
         for finding in project["findings"]:
             lines.append(f"• **{finding['rule']}** - {finding['message']}")
     for failure in result["unreadable"]:

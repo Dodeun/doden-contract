@@ -1,0 +1,12 @@
+{
+  "fires": [],
+  "why": "The locks are judged by what they carry, never by their names: the same two rules under other names, with the operator alone as bypass, are the same two locks.",
+  "rulesets": {
+    "merge-is-the-operators": {
+      "name": "only-the-operator-merges"
+    },
+    "tags-are-the-operators": {
+      "name": "only-the-operator-tags"
+    }
+  }
+}

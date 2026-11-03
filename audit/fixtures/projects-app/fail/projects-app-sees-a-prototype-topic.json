@@ -1,0 +1,18 @@
+{
+  "fires": [
+    "projects-app-sees-no-prototype"
+  ],
+  "why": "A Prototype belongs to the Prototypes' App alone, and one here is reached by two Apps: most likely a `project promote` that did not finish moving it.",
+  "settings": {
+    "repositories": [
+      "Dodeun/example-project",
+      "Dodeun/example-prototype"
+    ],
+    "topics": {
+      "Dodeun/example-project": [],
+      "Dodeun/example-prototype": [
+        "prototype"
+      ]
+    }
+  }
+}

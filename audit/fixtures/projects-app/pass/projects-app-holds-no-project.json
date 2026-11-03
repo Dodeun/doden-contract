@@ -1,0 +1,8 @@
+{
+  "fires": [],
+  "why": "A Project left out of the installation, by `--no-agent` or a click, is a Project without the agent, which the report names, and not drift.",
+  "settings": {
+    "repositories": [],
+    "topics": {}
+  }
+}

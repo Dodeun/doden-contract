@@ -1,0 +1,37 @@
+{
+  "fires": [
+    "rules-apply"
+  ],
+  "why": "Merging a pull request needs Contents write and nothing else, so an App that can push a branch can merge it. Only `update` on the default branch, which everyone but its bypass is refused, keeps merging the operator's (ADR-0017).",
+  "rulesets": {
+    "merge-is-the-operators": null
+  },
+  "settings": {
+    "applied_branch_rules": [
+      {
+        "type": "deletion",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      },
+      {
+        "type": "non_fast_forward",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      },
+      {
+        "type": "pull_request",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      },
+      {
+        "type": "required_status_checks",
+        "ruleset_source_type": "Repository",
+        "ruleset_source": "Dodeun/example-project",
+        "ruleset_id": 1
+      }
+    ]
+  }
+}

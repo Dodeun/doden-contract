@@ -1,0 +1,13 @@
+{
+  "fires": [],
+  "why": "A read-only deploy key pulls and pushes nothing, so it carries no bypass anywhere.",
+  "settings": {
+    "deploy_keys": [
+      {
+        "id": 140000002,
+        "title": "read-only",
+        "read_only": true
+      }
+    ]
+  }
+}

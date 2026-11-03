@@ -1,0 +1,14 @@
+{
+  "fires": [
+    "projects-app-cannot-widen"
+  ],
+  "why": "Workflows is the permission that reaches `.github/workflows/`, where secrets are named, and the one click that drops what keeps them the operator's (decision 98).",
+  "settings": {
+    "registered_permissions": {
+      "workflows": "write"
+    },
+    "granted_permissions": {
+      "workflows": "write"
+    }
+  }
+}

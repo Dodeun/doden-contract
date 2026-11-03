@@ -1,0 +1,12 @@
+{
+  "fires": [],
+  "why": "Only the `prototype` topic says anything here; any other is a label.",
+  "settings": {
+    "topics": {
+      "Dodeun/example-project": [
+        "nextjs",
+        "web"
+      ]
+    }
+  }
+}

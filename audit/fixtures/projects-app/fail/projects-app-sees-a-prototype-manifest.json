@@ -1,0 +1,15 @@
+{
+  "fires": [
+    "projects-app-sees-no-prototype"
+  ],
+  "why": "A topic is a label and enforces nothing, and the Manifest's `prototype` block is what makes a repository a Prototype. A Project on the list that still carries one has not finished its promotion.",
+  "project": {
+    "settings": {
+      "manifest": {
+        "prototype": {
+          "expires": "2026-12-31"
+        }
+      }
+    }
+  }
+}

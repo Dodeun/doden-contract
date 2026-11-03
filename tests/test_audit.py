@@ -60,7 +60,9 @@ def merge(overlay: dict) -> dict:
     """Apply a fixture overlay to the conforming settings.
 
     `rulesets` is keyed by name: a patch updates that ruleset's keys, `null`
-    removes it, and a key prefixed with `+` adds one. `settings` replaces
+    removes it, and a key prefixed with `+` adds one. Inside a patch, `null`
+    removes that key, which is how a fixture records what a read-only token
+    sees: no `bypass_actors` at all. `settings` replaces
     top-level fields, merging one level into a dict so that a fixture can
     change a single Manifest field without restating the Manifest.
     """
@@ -74,8 +76,12 @@ def merge(overlay: dict) -> dict:
             raise AssertionError(f"no ruleset called {name} in the conforming fixture")
         if patch is None:
             settings["rulesets"].remove(matching[0])
-        else:
-            matching[0].update(patch)
+            continue
+        for key, value in patch.items():
+            if value is None:
+                matching[0].pop(key, None)
+            else:
+                matching[0][key] = value
     for field, value in (overlay.get("settings") or {}).items():
         if isinstance(value, dict) and isinstance(settings.get(field), dict):
             settings[field].update(value)
@@ -130,7 +136,11 @@ class TheConformingFixture(AuditTestCase):
         """
         settings = merge({})
         names = {rs["name"] for rs in settings["rulesets"]}
-        self.assertEqual({"protect-main", "protect-releases"}, names)
+        self.assertEqual(
+            {"protect-main", "protect-releases", "merge-is-the-operators",
+             "tags-are-the-operators"},
+            names,
+        )
 
 
 class EveryRuleFires(AuditTestCase):
@@ -368,6 +378,7 @@ class WhatGitHubApplies(AuditTestCase):
                 },
                 "settings": {
                     "applied_branch_rules": [
+                        {"type": "update"},
                         {"type": "deletion"},
                         {"type": "non_fast_forward"},
                         {"type": "required_status_checks"},
@@ -388,6 +399,7 @@ class WhatGitHubApplies(AuditTestCase):
                     "applied_branch_rules": [
                         {"type": t}
                         for t in (
+                            "update",
                             "deletion",
                             "non_fast_forward",
                             "pull_request",
@@ -512,10 +524,13 @@ class ReadingSettingsOffGitHub(unittest.TestCase):
     # the findings. What they are about is the difference between an answer
     # and a failure to get one.
     REPOSITORY = {
-        "/repos/Dodeun/example-project": {"default_branch": "main"},
+        "/repos/Dodeun/example-project": {
+            "default_branch": "main", "owner": {"id": 110058158, "type": "User"},
+        },
         "/repos/Dodeun/example-project/rulesets": [],
         "/repos/Dodeun/example-project/rules/branches/main": [],
         "/repos/Dodeun/example-project/contents": None,
+        "/repos/Dodeun/example-project/keys": [],
     }
 
     def fetch_with(self, get):
@@ -631,6 +646,58 @@ class ReadingSettingsOffGitHub(unittest.TestCase):
                 self.responses(**dict(self.REPOSITORY,
                                       **{"/repos/Dodeun/example-project": {}}))
             )
+
+    def test_a_repository_that_names_no_owner_is_an_error(self):
+        """The owner is who the locks' bypass is compared against."""
+        with self.assertRaises(self.AuditError):
+            self.fetch_with(
+                self.responses(**dict(
+                    self.REPOSITORY,
+                    **{"/repos/Dodeun/example-project": {"default_branch": "main"}},
+                ))
+            )
+
+    def test_the_owner_is_recorded(self):
+        got = self.fetch_with(self.responses(**self.REPOSITORY))
+        self.assertEqual(110058158, got.owner_id)
+
+    def test_an_absent_bypass_list_stays_absent(self):
+        """GitHub sends `bypass_actors` only to a token that may write the
+        ruleset. Filled in as `[]`, it would be a list nobody saw."""
+        ruleset = {"id": 3, "name": "merge-is-the-operators", "target": "branch",
+                   "enforcement": "active", "rules": [{"type": "update"}],
+                   "current_user_can_bypass": "never"}
+        got = self.fetch_with(self.responses(**dict(
+            self.REPOSITORY,
+            **{"/repos/Dodeun/example-project/rulesets": [{"id": 3}],
+               "/repos/Dodeun/example-project/rulesets/3": ruleset},
+        )))
+        self.assertNotIn("bypass_actors", got.rulesets[0])
+
+    def test_the_deploy_keys_are_recorded(self):
+        keys = [{"id": 1, "title": "prod", "read_only": True, "key": "ssh-ed25519 AAAA",
+                 "verified": True}]
+        got = self.fetch_with(self.responses(**dict(
+            self.REPOSITORY, **{"/repos/Dodeun/example-project/keys": keys},
+        )))
+        self.assertEqual([{"id": 1, "title": "prod", "read_only": True}], got.deploy_keys)
+
+    def test_a_403_on_the_deploy_keys_is_the_audit_failing(self):
+        """Not *not checked*: one write key is both locks gone, and the token
+        is documented to hold the Administration: read this needs."""
+        with self.assertRaises(self.AuditError) as caught:
+            self.fetch_with(self.responses(**dict(
+                self.REPOSITORY,
+                **{"/repos/Dodeun/example-project/keys": self.NotPermitted("403")},
+            )))
+        self.assertNotIsInstance(caught.exception, self.NotPermitted)
+        self.assertIn("Administration", str(caught.exception))
+
+    def test_a_404_on_the_deploy_keys_is_not_an_empty_list(self):
+        with self.assertRaises(self.AuditError):
+            self.fetch_with(self.responses(**dict(
+                self.REPOSITORY, **{"/repos/Dodeun/example-project/keys": None},
+            )))
 
 
 class TheDiscordMessage(AuditTestCase):
@@ -754,14 +821,14 @@ class TheContractItJudgesAgainst(unittest.TestCase):
 APP_FIXTURES = FIXTURES / "app"
 
 
-def merge_app(overlay: dict) -> dict:
-    """Apply an App fixture overlay to the App's conforming settings.
+def merge_app(overlay: dict, base: Path = APP_FIXTURES) -> dict:
+    """Apply an App fixture overlay to an App's conforming settings.
 
     Like `merge`, `settings` replaces top-level fields and merges one level
     into a dict. Unlike it, `null` inside that dict removes the key, which is
     how a fixture takes a permission away.
     """
-    app = json.loads((APP_FIXTURES / "conforming.json").read_text(encoding="utf-8"))
+    app = json.loads((base / "conforming.json").read_text(encoding="utf-8"))
     for field, value in (overlay.get("settings") or {}).items():
         if isinstance(value, dict) and isinstance(app.get(field), dict):
             for key, level in value.items():
@@ -1067,7 +1134,7 @@ class ReadingTheAppOffGitHub(unittest.TestCase):
 
         original_request, original_jwt = self.settings._request, self.settings._app_jwt
         self.settings._request = _request
-        self.settings._app_jwt = lambda app_id, key: "the-jwt"
+        self.settings._app_jwt = lambda app_id, key, key_name="APP_PRIVATE_KEY": "the-jwt"
         self.addCleanup(setattr, self.settings, "_request", original_request)
         self.addCleanup(setattr, self.settings, "_app_jwt", original_jwt)
 
@@ -1195,3 +1262,486 @@ class SigningTheAppsJwt(unittest.TestCase):
     def test_a_key_that_is_not_one_is_the_audit_failing(self):
         with self.assertRaises(self.AuditError):
             self.settings._app_jwt(5188376, "not a key")
+
+
+class WhoBypasses(AuditTestCase):
+    """Decision 84 of phase 6: two locks, the operator alone past each.
+
+    The field that says who bypasses is sent only to a token that may write
+    the ruleset, so the audit's read-only token most likely sees none. An
+    absent list is not an empty one: the rule is then not checked, and every
+    report says so.
+    """
+
+    def findings(self, name):
+        overlay = json.loads((FIXTURES / "fail" / name).read_text(encoding="utf-8"))
+        result, status = self.audit(merge(overlay))
+        self.assertEqual(1, status, result)
+        return [
+            f["message"] for f in result["projects"][0]["findings"]
+            if f["rule"] == "bypass-lists"
+        ]
+
+    def test_the_locks_name_the_owner_and_the_mode(self):
+        for name, needles in {
+            "bypass-lists-merge-lock-admin-role.json": ("RepositoryRole 5", "`pull_request`"),
+            "bypass-lists-merge-lock-always.json": ("110058158", "`pull_request`"),
+            "bypass-lists-tag-lock-names-the-app.json": ("Integration 5592024", "`always`"),
+        }.items():
+            with self.subTest(fixture=name):
+                messages = self.findings(name)
+                self.assertEqual(1, len(messages), messages)
+                for needle in needles:
+                    self.assertIn(needle, messages[0])
+                self.assertIn("110058158", messages[0])
+
+    def test_a_lock_carrying_another_rule_is_held_to_an_empty_list(self):
+        messages = self.findings("bypass-lists-lock-carries-more.json")
+        self.assertEqual(1, len(messages), messages)
+        self.assertIn("empty the list", messages[0])
+
+    def test_a_list_missing_from_one_ruleset_is_not_checked(self):
+        """Half a view is not a view: a bypass on the one ruleset whose list
+        could not be seen is exactly what the rule would miss."""
+        result, status = self.audit(
+            merge({"rulesets": {"tags-are-the-operators": {"bypass_actors": None}}})
+        )
+        self.assertEqual(0, status, result)
+        statuses = {e["rule"]: e["status"] for e in result["projects"][0]["rules"]}
+        self.assertEqual("not checked", statuses["bypass-lists"])
+
+    def test_an_unknown_owner_is_not_checked(self):
+        result, status = self.audit(merge({"settings": {"owner_id": None}}))
+        self.assertEqual(0, status, result)
+        statuses = {e["rule"]: e["status"] for e in result["projects"][0]["rules"]}
+        self.assertEqual("not checked", statuses["bypass-lists"])
+
+    def test_the_report_says_it_cannot_see_who_bypasses(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import report
+
+        overlay = json.loads(
+            (FIXTURES / "pass" / "bypass-lists-unseen.json").read_text(encoding="utf-8")
+        )
+        result, _ = self.audit(merge(overlay))
+        self.assertIn("✅ `Dodeun/example-project` - not checked: bypass-lists",
+                      report.discord_message(result))
+        self.assertIn("who bypasses was not seen", report.text(result))
+
+    def test_a_visible_list_says_nothing_of_the_kind(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import report
+
+        result, _ = self.audit(merge({}))
+        self.assertNotIn("not checked", report.discord_message(result))
+        self.assertNotIn("who bypasses was not seen", report.text(result))
+
+
+class TheLocksApply(AuditTestCase):
+    """`rules-apply` requires `update` on the default branch and `creation`
+    on `v*` (decision 84 of phase 6), for every Project."""
+
+    def messages(self, name):
+        overlay = json.loads((FIXTURES / "fail" / name).read_text(encoding="utf-8"))
+        result, status = self.audit(merge(overlay))
+        self.assertEqual(1, status, result)
+        return [f["message"] for f in result["projects"][0]["findings"]
+                if f["rule"] == "rules-apply"]
+
+    def test_each_missing_lock_is_named(self):
+        for name, needle in {
+            "rules-apply-no-merge-lock.json": "`update`",
+            "rules-apply-no-tag-lock.json": "`creation`",
+        }.items():
+            with self.subTest(fixture=name):
+                messages = self.messages(name)
+                self.assertEqual(1, len(messages), messages)
+                self.assertIn(needle, messages[0])
+                self.assertIn("App", messages[0])
+
+    def test_a_merge_lock_github_stopped_applying_is_the_lapse(self):
+        messages = self.messages("rules-apply-merge-lock-lapsed.json")
+        self.assertEqual(1, len(messages), messages)
+        self.assertIn("`update`", messages[0])
+        self.assertIn("`merge-is-the-operators`", messages[0])
+        self.assertNotIn("`protect-main`", messages[0])
+
+    def test_a_merge_lock_applied_from_elsewhere_is_applied(self):
+        """Types are compared, never their source: `update` applied to the
+        branch is the lock, whichever ruleset GitHub took it from."""
+        result, status = self.audit(merge({
+            "rulesets": {"merge-is-the-operators": None},
+        }))
+        self.assertEqual(0, status, result)
+
+
+class NoWriteDeployKey(AuditTestCase):
+    def test_the_key_is_named(self):
+        overlay = json.loads(
+            (FIXTURES / "fail" / "write-deploy-key.json").read_text(encoding="utf-8")
+        )
+        result, _ = self.audit(merge(overlay))
+        message = result["projects"][0]["findings"][0]["message"]
+        self.assertIn("`ci-push`", message)
+        self.assertIn("140000001", message)
+
+    def test_unread_keys_are_not_checked(self):
+        result, status = self.audit(merge({"settings": {"deploy_keys": None}}))
+        self.assertEqual(0, status, result)
+        statuses = {e["rule"]: e["status"] for e in result["projects"][0]["rules"]}
+        self.assertEqual("not checked", statuses["no-write-deploy-key"])
+
+
+PROJECTS_APP_FIXTURES = FIXTURES / "projects-app"
+
+
+def merge_projects_app(overlay: dict) -> dict:
+    """`merge_app`, over the Projects' App's conforming settings."""
+    return merge_app(overlay, PROJECTS_APP_FIXTURES)
+
+
+class ProjectsAppTestCase(AuditTestCase):
+    def audit_projects_app(self, app: dict, *settings: dict):
+        """Run audit.py over the Projects' App, recorded, and recorded Projects."""
+        directory = Path(tempfile.mkdtemp(prefix="doden-projects-app-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        app_path = directory / "projects-app.json"
+        app_path.write_text(json.dumps(app), encoding="utf-8")
+        paths = []
+        for index, payload in enumerate(settings or (merge({}),)):
+            path = directory / f"{index}.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            paths.append(str(path))
+        proc = subprocess.run(
+            [sys.executable, str(self.home / "audit.py"), "--json",
+             "--settings", *paths, "--projects-app-settings", str(app_path)],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 2:
+            return proc.stderr, 2
+        return json.loads(proc.stdout), proc.returncode
+
+    def fixture(self, kind, name):
+        return json.loads(
+            (PROJECTS_APP_FIXTURES / kind / name).read_text(encoding="utf-8")
+        )
+
+    def run_fixture(self, overlay):
+        return self.audit_projects_app(
+            merge_projects_app(overlay), merge(overlay.get("project") or {})
+        )
+
+
+class TheProjectsApp(ProjectsAppTestCase):
+    """Decision 98 of phase 6: the agent's App, watched as the first one is."""
+
+    def test_the_app_as_it_was_installed_passes(self):
+        result, status = self.audit_projects_app(merge_projects_app({}))
+        self.assertEqual(0, status, result)
+        app = result["apps"][0]
+        self.assertEqual("doden-projects", app["app"])
+        self.assertEqual(
+            {"projects-app-cannot-widen", "projects-app-sees-no-prototype"},
+            {e["rule"] for e in app["rules"]},
+        )
+        for entry in app["rules"]:
+            self.assertEqual("pass", entry["status"], entry["rule"])
+
+    def test_each_failing_fixture_fires_exactly_what_it_claims(self):
+        for path in sorted((PROJECTS_APP_FIXTURES / "fail").glob("*.json")):
+            with self.subTest(fixture=path.name):
+                overlay = json.loads(path.read_text(encoding="utf-8"))
+                self.assertTrue(overlay.get("why"))
+                result, status = self.run_fixture(overlay)
+                self.assertEqual(1, status, result)
+                self.assertTrue(result["projects"][0]["ok"], "the Project did not drift")
+                findings = result["apps"][0]["findings"]
+                self.assertEqual(set(overlay["fires"]), {f["rule"] for f in findings})
+                for finding in findings:
+                    self.assertIn("doden-projects", finding["message"])
+                    self.assertTrue(finding["message"].rstrip().endswith("."))
+
+    def test_each_passing_fixture_comes_back_clean(self):
+        for path in sorted((PROJECTS_APP_FIXTURES / "pass").glob("*.json")):
+            with self.subTest(fixture=path.name):
+                overlay = json.loads(path.read_text(encoding="utf-8"))
+                result, status = self.run_fixture(overlay)
+                self.assertEqual(0, status, result)
+                self.assertEqual([], result["apps"][0]["findings"])
+
+    def test_every_rule_has_a_failing_and_a_passing_fixture(self):
+        result, _ = self.audit_projects_app(merge_projects_app({}))
+        rules = {entry["rule"] for entry in result["apps"][0]["rules"]}
+        for kind in ("fail", "pass"):
+            with self.subTest(kind=kind):
+                covered = set()
+                for path in (PROJECTS_APP_FIXTURES / kind).glob("*.json"):
+                    overlay = json.loads(path.read_text(encoding="utf-8"))
+                    if kind == "fail":
+                        covered |= set(overlay["fires"])
+                    else:
+                        found, _ = self.run_fixture(overlay)
+                        covered |= {e["rule"] for e in found["apps"][0]["rules"]
+                                    if e["status"] == "pass"}
+                self.assertEqual(rules, covered)
+
+    def test_a_finding_names_what_differs(self):
+        for name, needle in {
+            "projects-app-granted-workflows.json": "`workflows: write`",
+            "projects-app-requests-administration.json": "`administration: write`",
+            "projects-app-lacks-actions.json": "no `actions`",
+            "projects-app-installed-on-everything.json": "`all`",
+            "projects-app-sees-a-prototype-topic.json": "Dodeun/example-prototype",
+            "projects-app-sees-a-prototype-manifest.json": "Dodeun/example-project",
+            "projects-app-sees-an-unlisted-repository.json": "Dodeun/something-else",
+        }.items():
+            with self.subTest(fixture=name):
+                result, _ = self.run_fixture(self.fixture("fail", name))
+                messages = [f["message"] for f in result["apps"][0]["findings"]]
+                self.assertEqual(1, len(messages), messages)
+                self.assertIn(needle, messages[0])
+
+    def test_a_granted_and_a_requested_widening_are_told_apart(self):
+        granted, _ = self.run_fixture(self.fixture("fail", "projects-app-granted-workflows.json"))
+        asked, _ = self.run_fixture(
+            self.fixture("fail", "projects-app-requests-administration.json")
+        )
+        self.assertIn("installation holds", granted["apps"][0]["findings"][0]["message"])
+        self.assertIn("not accepted yet", asked["apps"][0]["findings"][0]["message"])
+
+    def test_a_project_is_matched_whatever_the_case_of_its_name(self):
+        result, status = self.audit_projects_app(merge_projects_app({"settings": {
+            "repositories": ["dodeun/EXAMPLE-project"],
+            "topics": {"dodeun/EXAMPLE-project": []},
+        }}))
+        self.assertEqual(0, status, result)
+        self.assertEqual(["Dodeun/example-project"], result["agent"]["with"])
+
+    def test_a_record_without_topics_is_read(self):
+        app = merge_projects_app({})
+        del app["topics"]
+        result, status = self.audit_projects_app(app)
+        self.assertEqual(0, status, result)
+
+    def test_both_apps_are_judged_side_by_side(self):
+        directory = Path(tempfile.mkdtemp(prefix="doden-both-apps-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        paths = {}
+        for name, payload in {"s": merge({}), "a": merge_app({}),
+                              "p": merge_projects_app({})}.items():
+            paths[name] = directory / f"{name}.json"
+            paths[name].write_text(json.dumps(payload), encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(self.home / "audit.py"), "--json",
+             "--settings", str(paths["s"]), "--app-settings", str(paths["a"]),
+             "--projects-app-settings", str(paths["p"])],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, proc.returncode, proc.stdout + proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(["doden-prototypes", "doden-projects"],
+                         [a["app"] for a in result["apps"]])
+
+
+class TheAgentInTheReport(ProjectsAppTestCase):
+    """Decision 83 of phase 6: every report names the Projects with the agent
+    and those without."""
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import report
+
+        self.report = report
+
+    def test_with_and_without_are_both_named(self):
+        other = merge({"settings": {"repository": "Dodeun/other-project"}})
+        result, status = self.audit_projects_app(merge_projects_app({}), merge({}), other)
+        self.assertEqual(0, status, result)
+        self.assertEqual(
+            {"app": "doden-projects", "with": ["Dodeun/example-project"],
+             "without": ["Dodeun/other-project"]},
+            result["agent"],
+        )
+        message = self.report.discord_message(result)
+        self.assertEqual(
+            "🤖 Agent (`doden-projects`) on: `Dodeun/example-project`; "
+            "not on: `Dodeun/other-project`.",
+            message.splitlines()[1],
+        )
+        self.assertIn(
+            "Agent (doden-projects) on: Dodeun/example-project; not on: "
+            "Dodeun/other-project.",
+            self.report.text(result),
+        )
+
+    def test_none_is_said_rather_than_left_blank(self):
+        result, _ = self.audit_projects_app(
+            merge_projects_app(self.fixture("pass", "projects-app-holds-no-project.json"))
+        )
+        self.assertIn("on: none; not on: `Dodeun/example-project`.",
+                      self.report.discord_message(result))
+
+    def test_a_run_without_the_projects_app_says_nothing_of_the_agent(self):
+        result, _ = self.audit(merge({}))
+        self.assertNotIn("agent", result)
+        self.assertNotIn("Agent", self.report.discord_message(result))
+
+    def test_an_app_that_could_not_be_read_leaves_the_agent_unknown(self):
+        spec = importlib.util.spec_from_file_location(
+            "doden_audit_agent", self.home / "audit.py"
+        )
+        entry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(entry)
+        result = entry.run(
+            [entry.Settings.from_dict(merge({}))], entry.platform(), None,
+            projects_app={"slug": "doden-projects", "appId": 5592024,
+                          "installationId": 178115315},
+        )
+        self.assertEqual({"app": "doden-projects", "unknown": True}, result["agent"])
+        self.assertEqual("doden-projects", result["unreadable"][0]["app"])
+        self.assertIn("PROJECTS_APP_PRIVATE_KEY is not set", result["unreadable"][0]["error"])
+        self.assertFalse(result["ok"])
+        self.assertIn("which Projects it reaches is unknown",
+                      self.report.discord_message(result))
+
+
+class TheProjectsAppsKey(AuditTestCase):
+    """The Projects' App on the list without its key is the audit unable to run."""
+
+    APP = {"slug": "doden-prototypes", "appId": 5188376, "installationId": 167903513}
+    PROJECTS_APP = {"slug": "doden-projects", "appId": 5592024, "installationId": 178115315}
+
+    def run_list(self, listing: dict, **env):
+        directory = Path(tempfile.mkdtemp(prefix="doden-projects-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        path = directory / "projects.json"
+        path.write_text(json.dumps(listing))
+        environment = dict(os.environ, AUDIT_TOKEN="not-a-real-token")
+        environment.pop("APP_PRIVATE_KEY", None)
+        environment.pop("PROJECTS_APP_PRIVATE_KEY", None)
+        environment.update(env)
+        return subprocess.run(
+            [sys.executable, str(self.home / "audit.py"), "--projects", str(path)],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+
+    def test_the_projects_app_without_its_key_is_exit_2(self):
+        proc = self.run_list({"projects": [], "projectsApp": self.PROJECTS_APP})
+        self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
+        self.assertIn("App doden-projects: PROJECTS_APP_PRIVATE_KEY is not set", proc.stdout)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_one_apps_key_does_not_stand_for_the_other(self):
+        """Each App has its own key, and one sees nothing of the other."""
+        proc = self.run_list(
+            {"projects": [], "app": self.APP, "projectsApp": self.PROJECTS_APP},
+            APP_PRIVATE_KEY="not-a-key",
+        )
+        self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
+        self.assertIn("PROJECTS_APP_PRIVATE_KEY is not set", proc.stdout)
+
+    def test_an_entry_of_the_wrong_shape_is_exit_2(self):
+        proc = self.run_list(
+            {"projects": [], "projectsApp": {"slug": "doden-projects"}},
+            PROJECTS_APP_PRIVATE_KEY="not-a-key",
+        )
+        self.assertEqual(2, proc.returncode, proc.stdout + proc.stderr)
+        self.assertIn("projectsApp", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
+
+class ReadingTheProjectsAppOffGitHub(unittest.TestCase):
+    """The same reads as the first App's, with the topics beside them, and
+    the same metadata-only token, revoked at the end."""
+
+    APP = {"slug": "doden-projects", "appId": 5592024, "installationId": 178115315}
+    PERMISSIONS = {"actions": "read", "contents": "write", "metadata": "read",
+                   "pull_requests": "write"}
+    FIRST_PAGE = ("GET", "/installation/repositories?per_page=100&page=1")
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT))
+        from audit import AuditError, settings
+
+        self.settings = settings
+        self.AuditError = AuditError
+        self.calls = []
+
+    def github(self, overrides=None):
+        answers = {
+            ("GET", "/app"): {"slug": "doden-projects", "permissions": dict(self.PERMISSIONS)},
+            ("GET", "/app/installations/178115315"): {
+                "repository_selection": "selected", "permissions": dict(self.PERMISSIONS),
+            },
+            ("POST", "/app/installations/178115315/access_tokens"): {"token": "minted"},
+            self.FIRST_PAGE: {
+                "total_count": 2,
+                "repositories": [
+                    {"full_name": "Dodeun/jobs-finder", "topics": ["web"]},
+                    {"full_name": "Dodeun/20min-tracker"},
+                ],
+            },
+            ("GET", "/repos/Dodeun/20min-tracker/topics"): {"names": []},
+            ("DELETE", "/installation/token"): None,
+        }
+        answers.update(overrides or {})
+
+        def _request(method, path, token, body=None, raw=False):
+            self.calls.append((method, path, token, body))
+            answer = answers.get((method, path))
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        original_request, original_jwt = self.settings._request, self.settings._app_jwt
+        self.settings._request = _request
+        self.settings._app_jwt = lambda app_id, key, key_name="APP_PRIVATE_KEY": "the-jwt"
+        self.addCleanup(setattr, self.settings, "_request", original_request)
+        self.addCleanup(setattr, self.settings, "_app_jwt", original_jwt)
+
+    def fetch(self):
+        return self.settings.fetch_app(
+            self.APP, "a key", key_name="PROJECTS_APP_PRIVATE_KEY", topics=True
+        )
+
+    def test_the_topics_are_read_from_the_listing_or_asked_for(self):
+        self.github()
+        got = self.fetch()
+        self.assertEqual(
+            {"Dodeun/jobs-finder": ["web"], "Dodeun/20min-tracker": []}, got.topics
+        )
+        self.assertEqual(self.PERMISSIONS, got.granted_permissions)
+
+    def test_every_read_uses_the_metadata_only_token_and_it_is_revoked(self):
+        self.github()
+        self.fetch()
+        mint = [c for c in self.calls if c[0] == "POST"]
+        self.assertEqual([{"permissions": {"metadata": "read"}}], [c[3] for c in mint])
+        topics = [c for c in self.calls if c[1].endswith("/topics")]
+        self.assertEqual({"minted"}, {c[2] for c in topics})
+        self.assertEqual(("DELETE", "/installation/token", "minted", None), self.calls[-1])
+
+    def test_topics_that_cannot_be_read_are_the_audit_failing(self):
+        """A repository read as having no topics would pass as no Prototype."""
+        self.github({("GET", "/repos/Dodeun/20min-tracker/topics"): None})
+        with self.assertRaises(self.AuditError) as caught:
+            self.fetch()
+        self.assertIn("Dodeun/20min-tracker", str(caught.exception))
+        self.assertEqual(("DELETE", "/installation/token", "minted", None), self.calls[-1])
+
+    def test_a_key_of_the_other_app_names_its_own_variable(self):
+        self.github({("GET", "/app"): {"slug": "doden-prototypes", "permissions": {}}})
+        with self.assertRaises(self.AuditError) as caught:
+            self.fetch()
+        self.assertIn("PROJECTS_APP_PRIVATE_KEY", str(caught.exception))
+        self.assertIn("doden-prototypes", str(caught.exception))
+
+    def test_the_first_app_reads_no_topics(self):
+        self.github()
+        got = self.settings.fetch_app(self.APP, "a key")
+        self.assertEqual({}, got.topics)
+        self.assertFalse([c for c in self.calls if c[1].endswith("/topics")])
