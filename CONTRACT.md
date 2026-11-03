@@ -108,7 +108,7 @@ together with the tag its workflow calls.
 **The commands** — `migrate` and `seed`, inside the database Add-on —
 **belong to the Project**, and change whenever its stack does. Whoever
 changes how the schema is migrated changes the command in the same pull
-request.
+request. So does the `preview` block, below, which a Project may carry.
 
 A Prototype carries a third part, the `prototype` block, which is neither:
 its presence is identity, and its settings are the Prototype's own.
@@ -132,6 +132,28 @@ database to act on. The container is never routed.
   deployed, **before** the new images serve. A command that fails stops the
   deploy and leaves the previous Release serving.
 - **`seed`** writes synthetic data into an empty database, for a Preview.
+
+### What a Preview is given
+
+A Preview runs the Project's production Stack in the lab, at one commit,
+against a fresh database that `seed` fills. It is given `DATABASE_URL`,
+pointing at that database, `DODEN_ENVIRONMENT=preview`, and a value drawn
+at random for each name the Manifest's optional `preview` block lists:
+
+```json
+"preview": { "generated": ["SESSION_SECRET"] }
+```
+
+Those values guard synthetic data, so they are not secrets there. A
+Preview gets no other secret: a feature that needs an outside service's,
+an OAuth client, a mailbox or a model provider, is absent there, and the
+Project boots without it when `DODEN_ENVIRONMENT` is `preview`. Sign-in
+there is the Project's own demo sign-in, into an account its seed creates,
+and the route exists only then. Production refuses `DODEN_ENVIRONMENT` in
+the Compose file's `environment`, with a value or without one, in any case
+(`prod-services`). That is the one place a Project passes it; a `command`
+or an image's own `ENV` that sets it is not read by either list, and is the
+Project's mistake to avoid.
 
 The Profile runs both on every CI run, against a throwaway database, because
 a declared command nobody has run is a Manifest field that is false.
@@ -489,6 +511,17 @@ A Service name in the Manifest is a reference, so it is checked as one. A
 typo there would otherwise surface halfway through a deploy, after the
 release's images were pulled; here it fails on the pull request that made it.
 
+### `preview-generated` — what a Preview generates is a secret of the Stack the platform does not set
+
+Each name in the `preview` block is a key some service of
+`docker-compose.prod.yml` takes with no value: a Preview hands the Stack its
+generated values through those keys alone, so another name reaches no
+container and is a typo. None is `DATABASE_URL`, `DODEN_ENVIRONMENT` or
+`APP_API_KEY`, which the platform sets on a Preview itself, nor a name
+docker, bash or a deploy reads: the list `prod-services` refuses as a
+secret, and the lab's `LAB_DEPLOY_` and `LAB_PREVIEW_`. A Prototype has no Preview, so a Manifest with a `prototype` block
+has no `preview` block.
+
 ### `healthchecks` — every service declares one
 
 A container that is running is not a container that is working. Without a
@@ -676,7 +709,9 @@ deploy, after a release tag that cannot be moved:
   `PATH`, `HOME`, `DOCKER_HOST`, `LD_PRELOAD` and their like. The five
   values the platform supplies, and `PWD` and `COMPOSE_PROJECT_NAME`, which
   Compose sets itself, written with no value, are filled by the render,
-  there and here, and are not secrets;
+  there and here, and are not secrets. No `DODEN_ENVIRONMENT` in a service's
+  `environment`, with a value or without one, in any case: the lab sets it
+  on a Preview alone, to open the Project's demo sign-in;
 - **labels:** as the lab's, with routers, Traefik services and middlewares
   named `${PROJECT_SLUG}`, `${PROJECT_SLUG}-<suffix>` or
   `${PROJECT_SLUG}_<suffix>`, a router answering for `Host` of the

@@ -12,7 +12,7 @@ so a Project production would refuse fails its check first, on its pull
 request, and not at its deploy, after a release tag that cannot be moved.
 
 **This table is where the two meet.** One row per refusal of
-`compose-policy.jq`, read at `doden-infra` commit `33409b3`, with the rule
+`compose-policy.jq`, read at `doden-infra`'s merge of pull request #28, with the rule
 of `check.py` that catches the same thing in a repository. A refusal added
 to either side gets its row here, and the other side follows.
 `tests/test_prod.py` builds, for every row, a Project that the row
@@ -113,6 +113,9 @@ to refuse, before the `prod-*` rules see it.
 | S14 | a volume mounted with an option other than `nocopy`: `subpath` among them | `prod-services` |
 | S15 | a secret, an environment key with no value that the render does not fill, that is not the name of an environment variable | `prod-services` |
 | S16 | a secret of a name docker, bash or the deploy itself reads: `PATH`, `HOME`, `DOCKER_HOST`, `DOCKER_CONFIG`, `LD_PRELOAD` and the like | `prod-services` |
+| S17 | `DODEN_ENVIRONMENT` with a value, the switch the lab sets on a Preview alone (decision 93) | `prod-services` |
+| S17b | `DODEN_ENVIRONMENT` with no value, a secret Doppler would fill with it | `prod-services` |
+| S17c | the same name in another case, which some configuration libraries read as the same | `prod-services` |
 
 ## Labels
 

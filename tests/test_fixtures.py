@@ -236,6 +236,57 @@ class Addons(FixtureCase):
         )
 
 
+class Previews(FixtureCase):
+    """The Manifest's `preview` block names the values a Preview is given drawn at random.
+
+    Each is a secret of the Stack, a key with no value, or it reaches no
+    container; none is a name the platform sets on a Preview or the deploy
+    reads; and a Prototype, which has no Preview, has no block (decision 93
+    of phase 6).
+    """
+
+    def test_a_project_that_generates_a_secret_of_its_stack_passes(self):
+        self.assertPasses("pass/preview-generated")
+
+    def test_a_name_the_platform_sets_is_refused(self):
+        self.assertFails(
+            "fail/preview-generated-set-by-the-platform", "preview-generated",
+            names="DATABASE_URL",
+        )
+
+    def test_every_name_a_deploy_reads_is_refused(self):
+        """The platform's own, production's list, and the lab's prefixes."""
+        for name in ("DODEN_ENVIRONMENT", "APP_API_KEY", "PATH", "DOCKER_HOST", "LAB_DEPLOY_ROOT", "LAB_PREVIEW_X"):
+            with self.subTest(name=name):
+                tree = merge("fail/preview-generated-set-by-the-platform")
+                self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+                manifest = tree / "platform.json"
+                manifest.write_text(
+                    manifest.read_text(encoding="utf-8").replace('"DATABASE_URL"', json.dumps(name)),
+                    encoding="utf-8",
+                )
+                result = check(tree)
+                self.assertEqual(["preview-generated"], sorted({v["rule"] for v in result["violations"]}))
+                self.assertIn(name, " ".join(v["message"] for v in result["violations"]))
+
+    def test_a_name_no_service_takes_is_refused(self):
+        self.assertFails(
+            "fail/preview-generated-not-a-secret", "preview-generated",
+            names="SESSION_SECRET",
+        )
+
+    def test_a_prototype_with_a_preview_block_is_refused(self):
+        self.assertFails(
+            (PROTOTYPE, "fail/preview-in-a-prototype"), "preview-generated",
+            names="promotion",
+        )
+
+    def test_a_name_that_is_not_a_variable_is_refused_by_the_schema(self):
+        self.assertFails(
+            "fail/manifest-preview-not-a-name", "manifest", names="SESSION-SECRET",
+        )
+
+
 class Prototypes(FixtureCase):
     """A Prototype says what it is in its Manifest, and its host agrees.
 

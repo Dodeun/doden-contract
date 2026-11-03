@@ -134,6 +134,12 @@ CASES = {
     ),
     "S15": ProjectCase("prod-services", "not the name of an environment variable", secret("A-B")),
     "S16": ProjectCase("prod-services", "DOCKER_HOST", secret("DOCKER_HOST")),
+    "S17": ProjectCase(
+        "prod-services", "DODEN_ENVIRONMENT",
+        lambda c: backend(c)["environment"].update(DODEN_ENVIRONMENT="preview"),
+    ),
+    "S17b": ProjectCase("prod-services", "DODEN_ENVIRONMENT", secret("DODEN_ENVIRONMENT")),
+    "S17c": ProjectCase("prod-services", "doden_environment", secret("doden_environment")),
     "L1": ProjectCase("prod-labels", "belongs to Docker Compose", label("com.docker.compose.project", "another")),
     "L2": ProjectCase("prod-labels", "traefik.enable is yes", worker(labels={"traefik.enable": "yes"})),
     "L3": ProjectCase("traefik-labels", "traefik.docker.network=web", label("traefik.docker.network", "data")),
