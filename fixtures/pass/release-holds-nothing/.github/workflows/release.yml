@@ -1,0 +1,14 @@
+# A release's tag, run holding nothing: it may be any tag.
+name: Announce a release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Announce it
+        run: bash scripts/announce.sh

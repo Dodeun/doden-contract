@@ -25,11 +25,15 @@ RULE = "branch-code-holds-no-secret"
 WORKFLOWS = ".github/workflows/"
 
 # The events that run a branch's code whatever the branch: a pull request's
-# head merged into its base, or the branch just created. Not `pull_request`
-# alone: the agent may review and comment on a pull request, and each of
-# those runs the same code as `pull_request` does, with the same secrets.
+# head merged into its base, the branch or tag just created, or a release's
+# tag. Not `pull_request` alone: the agent may review and comment on a pull
+# request, and each of those runs the same code as `pull_request` does, with
+# the same secrets. And `release`: the agent can create a tag that is not
+# `v*` and a release on it (ticket 87 measured both), so its tag's code is
+# the agent's.
 BRANCH_EVENTS = (
-    "pull_request", "pull_request_review", "pull_request_review_comment", "create",
+    "pull_request", "pull_request_review", "pull_request_review_comment",
+    "create", "release",
 )
 
 # The one branch only a merge reaches, and the tags only the operator makes.

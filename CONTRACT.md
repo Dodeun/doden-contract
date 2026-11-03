@@ -544,6 +544,8 @@ A workflow runs a branch's code when it runs on:
 
 - `pull_request`, `pull_request_review`, `pull_request_review_comment` or
   `create`, each of which runs the code of a branch whoever pushed it chose;
+- `release`, which runs the release's tag, and a tag that is not `v*`, with
+  a release on it, needs no more than pushing a branch;
 - a `push` whose `branches:` are not `main` alone, or whose `tags:` are not
   `v*` alone. A `push` with neither filter runs on every branch, and one
   with `branches-ignore:` or `tags-ignore:` on everything it does not name;

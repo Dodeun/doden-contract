@@ -1,0 +1,16 @@
+# A release's tag need not be v*, so its code beside a webhook is a branch's.
+name: Announce a release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Announce it
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: bash scripts/announce.sh

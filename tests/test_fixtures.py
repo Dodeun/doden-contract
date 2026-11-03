@@ -706,6 +706,16 @@ class BranchCodeHoldsNoSecret(FixtureCase):
             names="actions/github-script",
         )
 
+    def test_a_release_holding_nothing_passes(self):
+        self.assertPasses("pass/release-holds-nothing")
+
+    def test_a_release_runs_a_tag_anybody_could_make_and_is_refused(self):
+        """A release's tag need not be v*, and the agent can make the rest."""
+        self.assertFails(
+            "fail/release-holds-a-secret", "branch-code-holds-no-secret",
+            names="on release",
+        )
+
     def test_a_prototype_is_held_to_it_as_well(self):
         self.assertFails(
             (PROTOTYPE, "fail/branch-code-names-a-secret"),
