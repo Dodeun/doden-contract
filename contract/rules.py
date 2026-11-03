@@ -986,6 +986,10 @@ def image_size(project):
         )
 
 
+# The workflows, read with a reader of the checker's own: a module of their
+# own because the rule needs one and nothing else here does.
+from . import workflows  # noqa: E402,F401
+
 # The lists each deploy host holds a Stack to: the lab's for a Prototype,
 # production's for a Project, in modules of their own because each applies
 # to one kind alone. Imported last, so they report after the contract's own.

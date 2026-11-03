@@ -1,0 +1,15 @@
+# The base's secrets and a write token, a checkout away from the head's code.
+name: Tests
+on:
+  pull_request_target:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run the tests
+        run: docker compose -f docker-compose.test.yml run --rm test

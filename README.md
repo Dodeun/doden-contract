@@ -59,6 +59,8 @@ to fix their laptop.
 | `contract/lab.py`, `contract/prod.py` | The `lab-*` rules, for a Prototype, and the `prod-*` rules, for a Project: each host's differences from the other. |
 | `docs/lab.md`, `docs/prod.md` | Every refusal of each host's list beside the rule that catches it. A test fails on a row without a case. |
 | `contract/compose.py` | Rendering the Stack, and reading the source for the rules a render erases. |
+| `contract/workflows.py` | The `branch-code-holds-no-secret` rule: what a workflow that runs a branch's code may hold. |
+| `contract/yaml_subset.py` | A YAML reader covering what workflows are written in, and refusing the rest. |
 | `contract/schema.py` | A JSON Schema validator covering exactly what the schema uses. |
 | `contract/project.py` | The tree under judgement, read once. |
 | `fixtures/` | A conforming Project, and a failing example for every tier-1 rule. |
@@ -91,6 +93,17 @@ does not exist.
 `docker compose` is not a dependency the contract could avoid: the rules are
 asserted against the *rendered* Compose file, because grepping the source
 passes a Stack whose `ports:` arrives through a variable.
+
+The workflows are YAML too, and nothing renders them to JSON, so
+`contract/yaml_subset.py` reads them: a second thing written by hand, for
+the same reason, and held to the same line. It refuses anchors, aliases,
+tags, merge keys and a second document rather than misreading them. The
+difference is who is told: the schema is this repository's, so a keyword the
+validator lacks is exit **2**, while a workflow is the Project's, so one the
+reader cannot read is a violation of `branch-code-holds-no-secret`, which
+cannot say such a file holds no secret. When it was written it read every
+workflow and Compose file of the platform's repositories as PyYAML does;
+PyYAML was the yardstick, never a dependency.
 
 The tier-2 audit also calls `openssl`, to sign the Prototypes' App's JWT
 (below). It is a binary every runner already has, not a package to install.
@@ -254,6 +267,18 @@ values the platform supplies and what the docker CLI needs to find its
 plugin, so a key written with no value is a secret in CI, on a laptop and on
 the host alike: `SHELL:` was filled on a runner and null on the host. No
 other rule reads those values.
+
+**`v3.8.0` is a minor: it newly refuses nothing that passed.** Its
+`branch-code-holds-no-secret` rule refuses a secret, a write permission or a
+missing `permissions:` key in a workflow that runs a branch's code, and
+`pull_request_target` or a `client_payload` pasted into a `run:` block in
+any workflow (decision 85 of phase 6), so that the agent of badge 2, which
+can push a branch and cannot edit a workflow, never runs beside a secret.
+On 2026-11-03 `20min-tracker` and `jobs-finder` at `main`, and the Template
+with its Manifest filled in, passed it: `test.yml` and `profile.yml` run on
+`pull_request` with `contents: read` and no secret, `build.yml` pushes on
+`main` alone, `deploy.yml` on `v*` alone, and `lab-redeploy.yml` checks out
+the default branch.
 
 Changing `CONTRACT.md` puts every Project's copy out of date until each one
 is updated. Nothing fails because of it — the tier-1 rule compares the pinned

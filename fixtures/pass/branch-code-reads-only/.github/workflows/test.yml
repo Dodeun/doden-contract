@@ -1,0 +1,24 @@
+# A pull request's code, holding GITHUB_TOKEN and nothing else, and reading.
+name: Tests
+on:
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run the tests
+        run: docker compose -f docker-compose.test.yml run --rm test
+  contract:
+    uses: Dodeun/doden-contract/.github/workflows/contract-check.yml@v3

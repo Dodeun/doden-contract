@@ -69,3 +69,9 @@ Some fixtures exist to demonstrate something beyond their own rule:
 | `fail/project-host-in-lab` | The `prototype` block gone and the lab hostname kept: a promotion done halfway. `prototype-host` reads both ways for this one. |
 | `fail/prototype-expires-impossible-day` | `2026-02-30`, written in the right format and on no calendar. Why the date is a rule that parses rather than a pattern in the schema. |
 | `fail/prototype-access-code-misreadable` | A code with `0` and `1` in it. Refused by the schema, not left to whatever generates codes, because a code can be written by hand in a commit. |
+| `pass/main-push-holds-a-secret` | `workflow_dispatch` beside `packages: write` and a secret, and passing: it runs any ref, and dispatching needs Actions write, which only the operator holds. |
+| `fail/push-every-branch-holds-a-secret` | `push:` with no filter, which reads as "on push" and runs on every branch, the agent's included. |
+| `fail/branch-code-on-a-review` | Not `pull_request` and the same code: a review runs the pull request's head too, with the same secrets. |
+| `pass/dispatch-checks-out-the-default-branch` and `fail/dispatch-checks-out-the-payloads-ref` | The Template's `lab-redeploy.yml`, and the same file checking out the ref the payload names. One `ref:` is the whole difference. |
+| `pass/dispatch-builds-a-branch-holding-nothing` | A dispatch that does run a branch's code, and passes because it holds nothing: what the rule refuses is the pair, never a branch's code alone. |
+| `fail/workflow-unreadable` | An anchor, which GitHub reads and the checker's own YAML reader does not. Refused, because what cannot be read cannot be said to hold no secret. |

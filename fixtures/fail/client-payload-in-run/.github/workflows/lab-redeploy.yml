@@ -1,0 +1,25 @@
+# The payload pasted into a script: whoever sends the dispatch writes shell.
+name: Redeploy without a build
+on:
+  repository_dispatch:
+    types: [lab-redeploy]
+permissions:
+  contents: read
+jobs:
+  lab-redeploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: The commit asked for is the head of main
+        env:
+          ASKED: ${{ github.event.client_payload.commit }}
+        run: |
+          case "$ASKED" in *[!0-9a-f]*|'') exit 1 ;; esac
+          [ "$ASKED" = "$GITHUB_SHA" ]
+      - name: Send the deploy request
+        env:
+          LAB_SSH_KEY: ${{ secrets.LAB_SSH_KEY }}
+        run: bash deploy/lab-request.sh "${{ github.event.client_payload.commit }}"

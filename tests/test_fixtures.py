@@ -571,6 +571,109 @@ class ConfigurationAndImages(FixtureCase):
         )
 
 
+class BranchCodeHoldsNoSecret(FixtureCase):
+    """A workflow that runs a branch's code holds nothing worth taking.
+
+    The agent can push a branch but not edit a workflow, so what a workflow
+    holds is safe exactly when no branch's code runs beside it (decision 85).
+    """
+
+    def test_a_pull_requests_code_holding_only_a_read_token_passes(self):
+        self.assertPasses("pass/branch-code-reads-only")
+
+    def test_a_pull_requests_code_beside_a_secret_is_refused(self):
+        self.assertFails(
+            "fail/branch-code-names-a-secret", "branch-code-holds-no-secret",
+            names="OPENROUTER_API_KEY",
+        )
+
+    def test_a_pull_requests_code_granted_write_is_refused(self):
+        self.assertFails(
+            "fail/branch-code-writes", "branch-code-holds-no-secret",
+            names="packages at job test",
+        )
+
+    def test_a_workflow_left_with_the_repositorys_default_token_is_refused(self):
+        self.assertFails(
+            "fail/branch-code-no-permissions", "branch-code-holds-no-secret",
+            names="no permissions: key",
+        )
+
+    def test_handing_a_called_workflow_every_secret_is_refused(self):
+        self.assertFails(
+            "fail/branch-code-secrets-inherit", "branch-code-holds-no-secret",
+            names="secrets: inherit",
+        )
+
+    def test_a_review_runs_the_pull_requests_code_too(self):
+        self.assertFails(
+            "fail/branch-code-on-a-review", "branch-code-holds-no-secret",
+            names="on pull_request_review",
+        )
+
+    def test_pull_request_target_is_refused_outright(self):
+        self.assertFails(
+            "fail/branch-code-pull-request-target", "branch-code-holds-no-secret",
+            names="pull_request_target",
+        )
+
+    def test_main_may_hold_a_secret_and_write_and_be_dispatched(self):
+        """`workflow_dispatch` runs any ref, and only the operator can dispatch."""
+        self.assertPasses("pass/main-push-holds-a-secret")
+
+    def test_a_push_with_no_filter_runs_every_branch_and_is_refused(self):
+        self.assertFails(
+            "fail/push-every-branch-holds-a-secret", "branch-code-holds-no-secret",
+            names="every branch",
+        )
+
+    def test_a_push_to_another_branch_beside_main_is_refused(self):
+        self.assertFails(
+            "fail/push-another-branch-holds-a-secret", "branch-code-holds-no-secret",
+            names="release/**",
+        )
+
+    def test_a_release_tag_may_hold_the_deploy_key(self):
+        self.assertPasses("pass/release-tag-holds-a-secret")
+
+    def test_a_tag_that_is_not_a_release_tag_is_refused(self):
+        self.assertFails(
+            "fail/push-any-tag-holds-a-secret", "branch-code-holds-no-secret",
+            names="VPS_DEPLOY_KEY",
+        )
+
+    def test_a_dispatch_checking_out_the_default_branch_may_hold_a_key(self):
+        """The Template's lab-redeploy.yml, and the payload through env:."""
+        self.assertPasses("pass/dispatch-checks-out-the-default-branch")
+
+    def test_a_dispatch_checking_out_the_payloads_ref_is_refused(self):
+        self.assertFails(
+            "fail/dispatch-checks-out-the-payloads-ref", "branch-code-holds-no-secret",
+            names="client_payload.commit",
+        )
+
+    def test_a_dispatch_building_a_branch_with_nothing_to_lose_passes(self):
+        self.assertPasses("pass/dispatch-builds-a-branch-holding-nothing")
+
+    def test_the_payload_pasted_into_a_script_is_refused(self):
+        self.assertFails(
+            "fail/client-payload-in-run", "branch-code-holds-no-secret",
+            names="env:",
+        )
+
+    def test_a_workflow_the_checker_cannot_read_is_refused(self):
+        self.assertFails(
+            "fail/workflow-unreadable", "branch-code-holds-no-secret",
+            names="anchor",
+        )
+
+    def test_a_prototype_is_held_to_it_as_well(self):
+        self.assertFails(
+            (PROTOTYPE, "fail/branch-code-names-a-secret"),
+            "branch-code-holds-no-secret", names="OPENROUTER_API_KEY",
+        )
+
+
 class FilesGitDoesNotTrackYet(FixtureCase):
     """A run before a commit judges what that commit will hold.
 

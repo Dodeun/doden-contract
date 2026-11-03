@@ -1,0 +1,24 @@
+# A push with no filter runs on every branch, the agent's included.
+name: Publish images
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push the images, tagged by commit
+        run: bash scripts/publish.sh
+      - name: Say so
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: bash scripts/notify.sh

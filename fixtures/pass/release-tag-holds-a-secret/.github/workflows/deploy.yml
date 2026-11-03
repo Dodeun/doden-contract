@@ -1,0 +1,17 @@
+# A v* tag is the operator's alone to make, so its workflow may hold the deploy key.
+name: Deploy a tagged release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  packages: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Send the release to the host
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: bash deploy/request.sh
